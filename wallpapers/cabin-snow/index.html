@@ -127,7 +127,7 @@
       }
     }
     resize();
-    window.addEventListener('resize', () => { resize(); initFlakes(); smoke.init(); redrawDebugPins(); });
+    window.addEventListener('resize', () => { resize(); initFlakes(); stars.init(); smoke.init(); redrawDebugPins(); });
 
     function rnd(min, max) { return min + Math.random() * (max - min); }
     function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
@@ -304,10 +304,160 @@
     smoke.init();
 
     // ══════════════════════════════════════════════════════════════════════════
-    //  Effects layer
+    //  Stars
+    // ══════════════════════════════════════════════════════════════════════════
+    const stars = (() => {
+      let _stars  = null;
+      let _skyBot = 0;
+
+      function init() {
+        // Use the higher of the two tree tops as the sky/silhouette boundary
+        const higher = ANCHORS.leftTreeTop[1] < ANCHORS.rightTreeTop[1]
+                     ? ANCHORS.leftTreeTop : ANCHORS.rightTreeTop;
+        _skyBot = paintToCanvas(...higher).y * 0.96;
+
+        if (_stars) return;  // seed once — normalized coords scale with any viewport
+        _stars = [
+          // 5 prominent focal stars
+          ...Array.from({ length: 5 }, () => ({
+            nx: Math.random(), ny: Math.random() * 0.82,
+            r:   rnd(1.8, 3.0),
+            f1:  rnd(0.00020, 0.00058), f2: rnd(0.00120, 0.00260),
+            ph1: rnd(0, TAU),           ph2: rnd(0, TAU),
+            base: rnd(0.65, 0.90),
+            rgb: Math.random() < 0.30 ? [212, 228, 255] : [255, 253, 242],
+          })),
+          // 50 background stars
+          ...Array.from({ length: 50 }, () => ({
+            nx: Math.random(), ny: Math.random() * 0.97,
+            r:   rnd(0.5, 1.6),
+            f1:  rnd(0.00028, 0.00110), f2: rnd(0.00160, 0.00400),
+            ph1: rnd(0, TAU),           ph2: rnd(0, TAU),
+            base: rnd(0.30, 0.75),
+            rgb: Math.random() < 0.18 ? [200, 220, 255]
+               : Math.random() < 0.10 ? [255, 228, 168]
+               : [255, 253, 242],
+          })),
+        ];
+      }
+
+      function draw(ctx, t) {
+        if (!_stars || _skyBot <= 0) return;
+        const W = window.innerWidth;
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+
+        for (const s of _stars) {
+          const sx = s.nx * W;
+          const sy = s.ny * _skyBot;
+
+          const tw = 0.50 + 0.30 * Math.sin(t * s.f1 + s.ph1)
+                          + 0.20 * Math.sin(t * s.f2 + s.ph2);
+          const brightness = clamp(s.base * tw, 0, 1);
+          if (brightness < 0.02) continue;
+
+          const [r, g, b] = s.rgb;
+
+          // Soft glow corona
+          const glowR = s.r * 4.5;
+          const ga    = brightness * 0.38;
+          const glow  = ctx.createRadialGradient(sx, sy, 0, sx, sy, glowR);
+          glow.addColorStop(0,    `rgba(${r},${g},${b},${Math.min(0.999, ga * 1.7).toFixed(3)})`);
+          glow.addColorStop(0.40, `rgba(${r},${g},${b},${ga.toFixed(3)})`);
+          glow.addColorStop(1,    `rgba(${r},${g},${b},0)`);
+          ctx.fillStyle = glow;
+          ctx.beginPath(); ctx.arc(sx, sy, glowR, 0, TAU); ctx.fill();
+
+          // Sharp center point
+          ctx.fillStyle = `rgba(${r},${g},${b},${Math.min(0.999, brightness * 0.85).toFixed(3)})`;
+          ctx.beginPath(); ctx.arc(sx, sy, s.r, 0, TAU); ctx.fill();
+        }
+
+        ctx.restore();
+      }
+
+      return { init, draw };
+    })();
+
+    stars.init();
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Window glow
+    // ══════════════════════════════════════════════════════════════════════════
+    const windowGlow = (() => {
+      const _phase = Math.random() * TAU;
+
+      function draw(ctx, t) {
+        if (!imgNaturalW) return;
+
+        const lPos = paintToCanvas(...ANCHORS.leftWindow);
+        const rPos = paintToCanvas(...ANCHORS.rightWindow);
+        const W    = window.innerWidth;
+        const H    = window.innerHeight;
+        // Size the glow relative to the gap between the two windows
+        const { s } = coverScale();
+        const ww = 40 * s;   // ~40 image-px half-width, scaled
+        const wh = 50 * s;   // ~50 image-px half-height
+
+        // Four-frequency candle flicker — incommensurate freqs produce irregular beat
+        // (frequencies in rad/ms — Momentarium's rad/s values ÷ 1000)
+        const flicker = ph =>
+            0.55
+          + 0.20 * Math.sin(t * 0.00038 + ph)
+          + 0.15 * Math.sin(t * 0.00230 + ph * 1.4)
+          + 0.09 * Math.sin(t * 0.00610 + ph * 2.3)
+          + 0.06 * Math.sin(t * 0.01370 + ph * 4.1);
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+
+        for (const [pos, ph] of [[lPos, _phase], [rPos, _phase + 2.1]]) {
+          const { x: cx, y: cy } = pos;
+          const pulse = flicker(ph);
+
+          // Amber radial halo centered on the window
+          const glowR = ww * 2.6;
+          const ga    = 0.13 * pulse;
+          const halo  = ctx.createRadialGradient(cx, cy, 0, cx, cy, glowR);
+          halo.addColorStop(0,    `rgba(255,195, 75,${(ga * 1.9).toFixed(3)})`);
+          halo.addColorStop(0.30, `rgba(255,165, 45,${ga.toFixed(3)})`);
+          halo.addColorStop(0.65, `rgba(220,115, 18,${(ga * 0.32).toFixed(3)})`);
+          halo.addColorStop(1,    'rgba(200,80,0,0)');
+          ctx.fillStyle = halo;
+          ctx.beginPath(); ctx.arc(cx, cy, glowR, 0, TAU); ctx.fill();
+
+          // Warm cone of light spilling down onto snow below each window
+          const spillTop  = cy + wh * 0.5;
+          const spillLen  = wh * 3.8 * pulse;
+          const spillBot  = spillTop + spillLen;
+          const spreadTop = ww * 0.38;
+          const spreadBot = ww * 1.9 * pulse;
+          const sa        = 0.048 * pulse;
+          const spill = ctx.createLinearGradient(cx, spillTop, cx, spillBot);
+          spill.addColorStop(0, `rgba(255,175,55,${sa.toFixed(3)})`);
+          spill.addColorStop(1, 'rgba(255,130,20,0)');
+          ctx.fillStyle = spill;
+          ctx.beginPath();
+          ctx.moveTo(cx - spreadTop, spillTop);
+          ctx.lineTo(cx + spreadTop, spillTop);
+          ctx.lineTo(cx + spreadBot, spillBot);
+          ctx.lineTo(cx - spreadBot, spillBot);
+          ctx.closePath(); ctx.fill();
+        }
+
+        ctx.restore();
+      }
+
+      return { draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Effects layer — draw order: stars → glow → smoke
     // ══════════════════════════════════════════════════════════════════════════
     function drawEffects(dt, t) {
       fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
+      stars.draw(fxCtx, t);
+      windowGlow.draw(fxCtx, t);
       smoke.update(dt, t);
       smoke.draw(fxCtx);
     }

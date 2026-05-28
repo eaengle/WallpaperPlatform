@@ -95,7 +95,8 @@ WallpaperPlatform/
 ├── WeatherBridge.cs                — periodic event bridge; posts snow/wind data to active wallpaper
 └── wallpapers/
     ├── default/                    — built-in starfield wallpaper
-    └── cabin-snow/                 — aurora cabin scene with layered parallax snowfall
+    └── cabin-snow/                 — aurora cabin scene with layered snowfall, chimney smoke,
+                                       flickering window glow, and twinkling stars
 ```
 
 ### Windows WorkerW Notes
@@ -131,6 +132,37 @@ window.chrome?.webview?.addEventListener('message', e => {
 ```
 
 Lerp toward received values each frame for smooth transitions. See `wallpapers/cabin-snow/index.html` for a full example.
+
+---
+
+## Paint-Anchor System
+
+Wallpapers can pin effects to specific features of a background image regardless of monitor resolution. The system converts **image-pixel coordinates** (measured once against the original image) to screen coordinates at runtime using the same math as CSS `background-size: cover`.
+
+```javascript
+// In your wallpaper — define anchors as [imagePixelX, imagePixelY]
+const ANCHORS = {
+  chimneyTop: [901, 540],
+  leftWindow: [766, 679],
+};
+
+// At runtime — resolves to the correct screen position on any monitor
+const { x, y } = paintToCanvas(...ANCHORS.chimneyTop);
+```
+
+### Measuring anchors with debug mode
+
+Append `?debug` to the wallpaper URL when opening it directly in a browser:
+
+```
+file:///path/to/wallpapers/my-wallpaper/index.html?debug
+```
+
+- **Left-click** anywhere on the image to drop a pin and record its image-pixel coordinates
+- **Right-click** to clear all pins
+- Captured coordinates are shown on-screen and logged to the browser console
+
+Paste the logged values into your `ANCHORS` table. They will scale correctly to any screen size automatically.
 
 ---
 
