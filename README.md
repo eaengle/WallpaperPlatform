@@ -53,6 +53,7 @@ Trigger Event  ▶
     Blizzard Surge
     Cabin Flicker
     Window Shadow
+    Owl Swoop
 ──────────────────
 Exit
 ```
@@ -144,7 +145,7 @@ WallpaperPlatform/
 └── wallpapers/
     ├── default/                    — built-in starfield wallpaper
     └── cabin-snow/                 — aurora cabin scene with layered snowfall, chimney smoke,
-                                       flickering window glow, twinkling stars, and a window shadow event
+                                       flickering window glow, twinkling stars, window shadow, and owl swoop events
 ```
 
 ### Windows WorkerW Notes
@@ -192,6 +193,7 @@ The `data` field is optional and event-specific. Built-in events for the cabin-s
 | `blizzard_surge` | 3 – 8 min | Snow and wind spike for ~13 seconds |
 | `cabin_flicker` | 2 – 5 min | Window lights stutter as if losing power |
 | `window_shadow` | 4 – 10 min | An antlered silhouette appears briefly in a cabin window |
+| `owl_swoop` | 15 – 25 s | An owl swoops in from the left, perches on the tree, then departs |
 
 ### Listening in your wallpaper
 

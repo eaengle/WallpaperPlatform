@@ -103,13 +103,15 @@
       groundLevel:   [828,  743],
       leftRoofEdge:  [704,  632],
       rightRoofEdge: [953,  631],
-      leftTreeTop:   [371,  439],
-      rightTreeTop:  [1242, 465],
+      leftTreeTop:   [217,  328],
+      rightTreeTop:  [1505, 311],
       pondCorner:    [591,  839],
       boulderCenter: [1394, 763],
       // Bottom-center pin for each window — measure with ?debug, then fill in.
       leftWindowShadowPin:  [759, 704],
       rightWindowShadowPin: [878, 703],
+      // Owl perch point on the left tree — measure with ?debug, then fill in.
+      owlPerch: [218, 468],
     };
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -178,6 +180,7 @@
         case 'blizzard_surge': triggerBlizzard();        break;
         case 'cabin_flicker':  triggerCabinFlicker();    break;
         case 'window_shadow':  windowShadow.trigger();   break;
+        case 'owl_swoop':      owl.trigger();             break;
       }
     }
 
@@ -636,14 +639,226 @@
     })();
 
     // ══════════════════════════════════════════════════════════════════════════
-    //  Effects layer — draw order: stars → shadow → glow → smoke
+    //  Owl — swoops from off-screen left, perches on left tree, departs right.
+    //  Uses swoop.png (pre-alpha) for the departing phase; falls back to
+    //  procedural drawing if the image hasn't loaded.
+    //  Requires owlPerch in ANCHORS (measure via ?debug).
+    // ══════════════════════════════════════════════════════════════════════════
+    const owl = (() => {
+      let _swoopImg = null;
+      const _imgLoad = new Image();
+      _imgLoad.onload = () => { _swoopImg = _imgLoad; };
+      _imgLoad.src = 'owl-swoop.png';
+
+      let _flyingImg = null;
+      const _flyingLoad = new Image();
+      _flyingLoad.onload = () => { _flyingImg = _flyingLoad; };
+      _flyingLoad.src = 'owl-flying.png';
+
+      const active = [];
+
+      function trigger() {
+        if (!ANCHORS.owlPerch || active.length > 0) return;
+        active.push({ t0: performance.now() });
+      }
+
+      function draw(ctx, now) {
+        if (!active.length || !ANCHORS.owlPerch || !imgNaturalW) return;
+
+        const a  = active[0];
+        const et = (now - a.t0) / 1000;
+        if (et >= 16.1) { active.shift(); return; }
+
+        const perch = paintToCanvas(...ANCHORS.owlPerch);
+        const W = window.innerWidth, H = window.innerHeight;
+        const sz    = Math.min(W, H) * 0.070;
+        const rsz   = sz / 3;
+        const p     = et / 16.1;
+        const fadeIn = Math.min(1, et / 0.55);
+
+        function drawFlying(x, y, phase, lift, alpha, mode) {
+          const sz = rsz;
+          const wb = Math.sin(phase * TAU);
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          ctx.translate(x, y);
+          ctx.rotate(lift);
+
+          if (mode === 'departing') {
+            const lp = Math.sin(phase * TAU * .36) * .04;
+            ctx.scale(-1, 1);
+            ctx.fillStyle = '#100904';
+            ctx.save(); ctx.rotate(-.48 + lp);
+            ctx.beginPath();
+            ctx.moveTo(-sz*.06,-sz*.02);
+            ctx.quadraticCurveTo(-sz*.86,-sz*.76,-sz*1.86,-sz*.58);
+            ctx.quadraticCurveTo(-sz*1.62,-sz*.42,-sz*1.92,-sz*.28);
+            ctx.quadraticCurveTo(-sz*1.52,-sz*.20,-sz*1.86,-sz*.04);
+            ctx.quadraticCurveTo(-sz*1.42, sz*.02,-sz*1.70, sz*.18);
+            ctx.quadraticCurveTo(-sz*.92,  sz*.22,-sz*.08,  sz*.16);
+            ctx.closePath(); ctx.fill();
+            ctx.restore();
+            ctx.fillStyle = '#120a04';
+            ctx.save(); ctx.rotate(-.20 - lp * .55);
+            ctx.beginPath();
+            ctx.moveTo(0,-sz*.04);
+            ctx.quadraticCurveTo( sz*.82,-sz*.86, sz*1.94,-sz*.76);
+            ctx.quadraticCurveTo( sz*1.70,-sz*.56, sz*2.02,-sz*.44);
+            ctx.quadraticCurveTo( sz*1.62,-sz*.34, sz*1.92,-sz*.17);
+            ctx.quadraticCurveTo( sz*1.46,-sz*.08, sz*1.70, sz*.08);
+            ctx.quadraticCurveTo( sz*.88,  sz*.18, sz*.02,  sz*.14);
+            ctx.closePath(); ctx.fill();
+            ctx.restore();
+            ctx.fillStyle = '#0d0703';
+            ctx.beginPath();
+            ctx.moveTo(sz*.34,sz*.12); ctx.lineTo(sz*.98,sz*.04); ctx.lineTo(sz*.80,sz*.20);
+            ctx.lineTo(sz*1.04,sz*.34); ctx.lineTo(sz*.34,sz*.34); ctx.closePath(); ctx.fill();
+            ctx.fillStyle = '#130a04';
+            ctx.beginPath(); ctx.ellipse(0, sz*.20, sz*.58, sz*.34, .06, 0, TAU); ctx.fill();
+            ctx.fillStyle = '#0f0803';
+            ctx.beginPath(); ctx.arc(-sz*.38, -sz*.10, sz*.36, 0, TAU); ctx.fill();
+            ctx.fillStyle = '#140b04';
+            ctx.beginPath();
+            ctx.moveTo(-sz*.58,-sz*.18);
+            ctx.quadraticCurveTo(-sz*.34,-sz*.48,-sz*.10,-sz*.18);
+            ctx.quadraticCurveTo(-sz*.02, sz*.10,-sz*.34, sz*.18);
+            ctx.quadraticCurveTo(-sz*.66, sz*.10,-sz*.58,-sz*.18);
+            ctx.closePath(); ctx.fill();
+            ctx.fillStyle = '#0b0502';
+            ctx.beginPath();
+            ctx.moveTo(-sz*.35,-sz*.02); ctx.lineTo(-sz*.26,sz*.10); ctx.lineTo(-sz*.44,sz*.10);
+            ctx.closePath(); ctx.fill();
+            ctx.strokeStyle = '#0b0502'; ctx.lineWidth = sz*.045; ctx.lineCap = 'round';
+            [-sz*.16, sz*.03].forEach((lx, i) => {
+              ctx.beginPath(); ctx.moveTo(lx, sz*.42); ctx.lineTo(lx + sz*(.06+i*.03), sz*.61); ctx.stroke();
+            });
+            ctx.restore(); return;
+          }
+
+          // swooping mode
+          const wr = .18 + Math.max(0, -wb) * .12;
+          ctx.fillStyle = '#100904';
+          ctx.save(); ctx.rotate(-wr * .62);
+          ctx.beginPath();
+          ctx.moveTo(-sz*.12,-sz*.02);
+          ctx.quadraticCurveTo(-sz*.42,-sz*.92,-sz*.94,-sz*1.38);
+          ctx.quadraticCurveTo(-sz*1.14,-sz*1.08,-sz*1.00,-sz*.76);
+          ctx.quadraticCurveTo(-sz*1.20,-sz*.64,-sz*1.02,-sz*.40);
+          ctx.quadraticCurveTo(-sz*1.18,-sz*.24,-sz*.92,-sz*.08);
+          ctx.quadraticCurveTo(-sz*.58,  sz*.08,-sz*.12, sz*.14);
+          ctx.closePath(); ctx.fill();
+          ctx.restore();
+          ctx.save(); ctx.rotate(wr * .62);
+          ctx.beginPath();
+          ctx.moveTo( sz*.12,-sz*.02);
+          ctx.quadraticCurveTo( sz*.42,-sz*.92, sz*.94,-sz*1.38);
+          ctx.quadraticCurveTo( sz*1.14,-sz*1.08, sz*1.00,-sz*.76);
+          ctx.quadraticCurveTo( sz*1.20,-sz*.64, sz*1.02,-sz*.40);
+          ctx.quadraticCurveTo( sz*1.18,-sz*.24, sz*.92,-sz*.08);
+          ctx.quadraticCurveTo( sz*.58,  sz*.08, sz*.12, sz*.14);
+          ctx.closePath(); ctx.fill();
+          ctx.restore();
+          ctx.beginPath(); ctx.ellipse(0, sz*.22, sz*.42, sz*.58, 0, 0, TAU); ctx.fill();
+          ctx.fillStyle = '#0b0502';
+          ctx.beginPath();
+          ctx.moveTo(-sz*.25,sz*.68); ctx.lineTo(0,sz*1.04); ctx.lineTo(sz*.25,sz*.68);
+          ctx.lineTo(sz*.14,sz*1.14); ctx.lineTo(0,sz*.98); ctx.lineTo(-sz*.14,sz*1.14);
+          ctx.closePath(); ctx.fill();
+          ctx.beginPath(); ctx.arc(0, -sz*.28, sz*.32, 0, TAU); ctx.fill();
+          [[-sz*.18,-1],[sz*.18,1]].forEach(([ox, side]) => {
+            ctx.beginPath();
+            ctx.moveTo(ox,-sz*.50); ctx.lineTo(ox+side*sz*.12,-sz*.76); ctx.lineTo(ox-side*sz*.05,-sz*.55);
+            ctx.closePath(); ctx.fill();
+          });
+          ctx.restore();
+        }
+
+        function drawPerched(x, y, alpha) {
+          const sz = rsz;
+          const ht = Math.sin(et * 1.28) * 0.36;
+          ctx.save(); ctx.globalAlpha = alpha; ctx.translate(x, y);
+          ctx.fillStyle = '#160d06';
+          ctx.beginPath(); ctx.ellipse(0, sz*.24, sz*.34, sz*.54, 0, 0, TAU); ctx.fill();
+          ctx.fillStyle = '#211307';
+          ctx.beginPath(); ctx.ellipse(-sz*.20, sz*.20, sz*.14, sz*.44, -.16, 0, TAU); ctx.fill();
+          ctx.beginPath(); ctx.ellipse( sz*.20, sz*.20, sz*.14, sz*.44,  .16, 0, TAU); ctx.fill();
+          ctx.save(); ctx.translate(0, -sz*.18); ctx.rotate(ht);
+          ctx.fillStyle = '#1a0f07';
+          ctx.beginPath(); ctx.arc(0, 0, sz*.34, 0, TAU); ctx.fill();
+          [[-sz*.16,-1],[sz*.16,1]].forEach(([ox, s]) => {
+            ctx.beginPath();
+            ctx.moveTo(ox,-sz*.25); ctx.lineTo(ox+s*sz*.12,-sz*.50); ctx.lineTo(ox-s*sz*.05,-sz*.31);
+            ctx.closePath(); ctx.fill();
+          });
+          ctx.fillStyle = 'rgba(255,222,128,0.96)';
+          [-sz*.12, sz*.12].forEach(ex => { ctx.beginPath(); ctx.arc(ex,-sz*.02,sz*.085,0,TAU); ctx.fill(); });
+          ctx.fillStyle = '#090504';
+          [-sz*.12, sz*.12].forEach(ex => { ctx.beginPath(); ctx.arc(ex,-sz*.02,sz*.044,0,TAU); ctx.fill(); });
+          ctx.restore();
+          ctx.strokeStyle = '#100904'; ctx.lineWidth = sz*.055; ctx.lineCap = 'round';
+          [-sz*.10, sz*.10].forEach(fx => {
+            ctx.beginPath(); ctx.moveTo(fx, sz*.75); ctx.lineTo(fx + sz*.13, sz*.84); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(fx, sz*.75); ctx.lineTo(fx - sz*.13, sz*.84); ctx.stroke();
+          });
+          ctx.restore();
+        }
+
+        if (p < 0.244) {
+          const q    = p / 0.244;
+          const ease = 1 - Math.pow(1 - q, 3);
+          const startX = perch.x - Math.min(W, H) * 0.52;
+          const startY = perch.y - H * 0.28;
+          const owlX = startX + (perch.x - startX) * ease;
+          const owlY = startY + (perch.y - startY) * ease + Math.sin(q * Math.PI) * sz * 0.86;
+          if (_flyingImg) {
+            const drawSize = sz * 1.2;
+            ctx.save();
+            ctx.globalAlpha = fadeIn;
+            ctx.translate(owlX, owlY);
+            ctx.rotate(0.34 - ease * 0.42);
+            ctx.drawImage(_flyingImg, -drawSize * 0.5, -drawSize * 0.5, drawSize, drawSize);
+            ctx.restore();
+          } else {
+            drawFlying(owlX, owlY, et * 1.7, 0.34 - ease * 0.42, fadeIn, 'swooping');
+          }
+        } else if (p < 0.609) {
+          drawPerched(perch.x, perch.y, Math.min(1, (p - 0.244) / 0.07));
+        } else {
+          const q    = (p - 0.609) / 0.391;
+          const ease = q * q * (3 - 2 * q);
+          const endY = paintToCanvas(...ANCHORS.leftRoofEdge).y - sz * 0.85;
+          const owlX = perch.x + (W - perch.x + sz * 2) * ease;
+          const owlY = perch.y * (1 - ease) + endY * ease - Math.sin(q * Math.PI) * sz * 2.0;
+          const edgeFade = owlX > W * 0.88 ? Math.max(0, 1 - (owlX - W * 0.88) / (sz * 3)) : 1;
+          if (_swoopImg) {
+            const drawH = rsz * 2.3;
+            const drawW = drawH * (_swoopImg.naturalWidth / _swoopImg.naturalHeight);
+            ctx.save();
+            ctx.globalAlpha = edgeFade;
+            ctx.translate(owlX, owlY);
+            ctx.rotate(-0.10 - ease * 0.10);
+            ctx.drawImage(_swoopImg, -drawW * 0.5, -drawH * 0.5, drawW, drawH);
+            ctx.restore();
+          } else {
+            drawFlying(owlX, owlY, et * 2.15, -0.10 - ease * 0.10, edgeFade, 'departing');
+          }
+        }
+      }
+
+      return { trigger, draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Effects layer — draw order: stars → owl → shadow → glow → smoke
     //  Shadow is drawn BEFORE the window glow so the amber light overlays it,
     //  making the figure look like it's inside the cabin behind the glass.
+    //  Owl is drawn before the window effects — it's an outdoor creature.
     // ══════════════════════════════════════════════════════════════════════════
     function drawEffects(dt, t) {
       fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
       stars.draw(fxCtx, t);
       shootingStar.draw(fxCtx, performance.now());
+      owl.draw(fxCtx, performance.now());
       windowShadow.draw(fxCtx, performance.now());
       windowGlow.draw(fxCtx, t);
       smoke.update(dt, t);
