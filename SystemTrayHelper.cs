@@ -10,6 +10,7 @@ internal sealed class SystemTrayHelper : IDisposable
     private readonly NotifyIcon _icon;
     private readonly WallpaperPlatform.MainWindow _window;
     private ToolStripMenuItem _scenesMenu = null!;
+    private ToolStripMenuItem _eventsMenu = null!;
 
     public event Action? ExitRequested;
 
@@ -49,11 +50,8 @@ internal sealed class SystemTrayHelper : IDisposable
 
         menu.Items.Add(new ToolStripSeparator());
 
-        var events = new ToolStripMenuItem("Trigger Event");
-        events.DropDownItems.Add("Shooting Star",  null, (_, _) => _window.FireEvent("shooting_star"));
-        events.DropDownItems.Add("Blizzard Surge", null, (_, _) => _window.FireEvent("blizzard_surge"));
-        events.DropDownItems.Add("Cabin Flicker",  null, (_, _) => _window.FireEvent("cabin_flicker"));
-        menu.Items.Add(events);
+        _eventsMenu = new ToolStripMenuItem("Trigger Event");
+        menu.Items.Add(_eventsMenu);
 
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit", null, (_, _) => ExitRequested?.Invoke());
@@ -64,6 +62,14 @@ internal sealed class SystemTrayHelper : IDisposable
     {
         foreach (ToolStripMenuItem item in _scenesMenu.DropDownItems)
             item.Checked = item.Tag is string f && f == _window.CurrentWallpaper;
+
+        _eventsMenu.DropDownItems.Clear();
+        foreach (var ev in _window.CurrentWallpaperEvents)
+        {
+            var name = ev.Name;
+            _eventsMenu.DropDownItems.Add(ev.Label, null, (_, _) => _window.FireEvent(name));
+        }
+        _eventsMenu.Enabled = _eventsMenu.DropDownItems.Count > 0;
     }
 
     private static IEnumerable<(string folder, string displayName)> EnumerateWallpapers()

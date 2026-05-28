@@ -80,13 +80,31 @@ wallpapers/
   "name": "My Wallpaper",
   "version": "1.0.0",
   "description": "A short description",
-  "tier": "free"
+  "tier": "free",
+  "events": [
+    { "name": "my_event", "label": "My Event", "minSeconds": 60, "maxSeconds": 300 }
+  ]
 }
 ```
 
 | Field | Values |
 |---|---|
 | `tier` | `"free"` or `"premium"` |
+
+#### events
+
+The optional `events` array declares which scene events this wallpaper supports. The platform reads this at load time to:
+
+- Schedule automatic event firing via `WallpaperEventBridge` (using `minSeconds`/`maxSeconds` as the random interval window)
+- Populate the **Trigger Event** submenu in the system tray with only the events relevant to the active scene
+- Disable **Trigger Event** entirely when the active wallpaper declares no events
+
+| Field | Description |
+|---|---|
+| `name` | Internal event name posted to the wallpaper JS |
+| `label` | Display name shown in the system tray menu |
+| `minSeconds` | Minimum random delay between automatic firings |
+| `maxSeconds` | Maximum random delay between automatic firings |
 
 ### index.html
 
@@ -259,7 +277,7 @@ Edit `tools/IconGen/Program.cs` to change the design, then rebuild the main proj
 - [ ] Windows startup registration  
 - [ ] Multi-monitor support  
 - [ ] License key validation for premium wallpaper packs
-- [ ] Event definitions driven by `manifest.json` (per-wallpaper event schedules)
+- [x] Event definitions driven by `manifest.json` (per-wallpaper event schedules)
 
 ---
 

@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Interop;
 using Microsoft.Web.WebView2.Core;
@@ -68,27 +69,45 @@ public partial class MainWindow : Window
         _weather.Start();
 
         _events?.Dispose();
-        _events = new WallpaperEventBridge(WebView,
-        [
-            new WallpaperEventBridge.EventDef("shooting_star",  TimeSpan.FromSeconds(45), TimeSpan.FromMinutes(3)),
-            new WallpaperEventBridge.EventDef("blizzard_surge", TimeSpan.FromMinutes(3),  TimeSpan.FromMinutes(8)),
-            new WallpaperEventBridge.EventDef("cabin_flicker",  TimeSpan.FromMinutes(2),  TimeSpan.FromMinutes(5)),
-        ]);
-        _events.Start();
+        _events = null;
+        if (CurrentWallpaperEvents.Length > 0)
+        {
+            _events = new WallpaperEventBridge(WebView,
+                CurrentWallpaperEvents.Select(e => new WallpaperEventBridge.EventDef(
+                    e.Name,
+                    TimeSpan.FromSeconds(e.MinSeconds),
+                    TimeSpan.FromSeconds(e.MaxSeconds)
+                ))
+            );
+            _events.Start();
+        }
     }
 
     public void FireEvent(string name) => _events?.PostEvent(name);
 
-    public string CurrentWallpaper { get; private set; } = "cabin-snow";
+    public string             CurrentWallpaper       { get; private set; } = "cabin-snow";
+    public WallpaperEventDef[] CurrentWallpaperEvents { get; private set; } = [];
 
     public void LoadWallpaper(string name)
     {
-        var path = Path.Combine(
-            AppDomain.CurrentDomain.BaseDirectory,
-            "wallpapers", name, "index.html");
-
+        var dir  = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "wallpapers", name);
+        var path = Path.Combine(dir, "index.html");
         if (!File.Exists(path)) return;
-        CurrentWallpaper = name;
+
+        CurrentWallpaper       = name;
+        CurrentWallpaperEvents = LoadManifestEvents(dir);
         WebView.CoreWebView2.Navigate("file:///" + path.Replace('\\', '/'));
+    }
+
+    private static WallpaperEventDef[] LoadManifestEvents(string wallpaperDir)
+    {
+        var manifestPath = Path.Combine(wallpaperDir, "manifest.json");
+        if (!File.Exists(manifestPath)) return [];
+        try
+        {
+            var manifest = JsonSerializer.Deserialize<WallpaperManifest>(File.ReadAllText(manifestPath));
+            return manifest?.Events ?? [];
+        }
+        catch { return []; }
     }
 }
