@@ -1,0 +1,7 @@
+bin/
+obj/
+.vs/
+*.user
+*.suo
+WebView2Cache/
+WallpaperPlatform_diag.txt
