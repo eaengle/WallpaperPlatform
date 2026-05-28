@@ -52,6 +52,7 @@ Trigger Event  ▶
     Shooting Star
     Blizzard Surge
     Cabin Flicker
+    Window Shadow
 ──────────────────
 Exit
 ```
@@ -143,7 +144,7 @@ WallpaperPlatform/
 └── wallpapers/
     ├── default/                    — built-in starfield wallpaper
     └── cabin-snow/                 — aurora cabin scene with layered snowfall, chimney smoke,
-                                       flickering window glow, and twinkling stars
+                                       flickering window glow, twinkling stars, and a window shadow event
 ```
 
 ### Windows WorkerW Notes
@@ -190,6 +191,7 @@ The `data` field is optional and event-specific. Built-in events for the cabin-s
 | `shooting_star` | 45 s – 3 min | A streak of light crosses the sky |
 | `blizzard_surge` | 3 – 8 min | Snow and wind spike for ~13 seconds |
 | `cabin_flicker` | 2 – 5 min | Window lights stutter as if losing power |
+| `window_shadow` | 4 – 10 min | An antlered silhouette appears briefly in a cabin window |
 
 ### Listening in your wallpaper
 

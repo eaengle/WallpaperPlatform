@@ -4,8 +4,9 @@
   "description": "Aurora night cabin with layered snowfall",
   "tier": "free",
   "events": [
-    { "name": "shooting_star",  "label": "Shooting Star",  "minSeconds": 45,  "maxSeconds": 180 },
-    { "name": "blizzard_surge", "label": "Blizzard Surge", "minSeconds": 180, "maxSeconds": 480 },
-    { "name": "cabin_flicker",  "label": "Cabin Flicker",  "minSeconds": 120, "maxSeconds": 300 }
+    { "name": "shooting_star",  "label": "Shooting Star",  "minSeconds": 15, "maxSeconds": 25 },
+    { "name": "blizzard_surge", "label": "Blizzard Surge", "minSeconds": 15, "maxSeconds": 25 },
+    { "name": "cabin_flicker",  "label": "Cabin Flicker",  "minSeconds": 15, "maxSeconds": 25 },
+    { "name": "window_shadow",  "label": "Window Shadow",  "minSeconds": 15, "maxSeconds": 25 }
   ]
 }
