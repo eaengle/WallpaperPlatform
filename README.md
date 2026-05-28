@@ -145,7 +145,7 @@ WallpaperPlatform/
 └── wallpapers/
     ├── default/                    — built-in starfield wallpaper
     └── cabin-snow/                 — aurora cabin scene with layered snowfall, chimney smoke,
-                                       flickering window glow, twinkling stars, window shadow, and owl swoop events
+                                       flickering window glow, twinkling stars, window shadow, owl swoop, and rabbit hop events
 ```
 
 ### Windows WorkerW Notes
@@ -185,15 +185,16 @@ Posted by `WallpaperEventBridge` on randomised C# timers, or immediately when tr
 { "type": "event", "name": "shooting_star", "data": null }
 ```
 
-The `data` field is optional and event-specific. Built-in events for the cabin-snow scene:
+The `data` field is optional and event-specific. Built-in events for the cabin-snow scene (intervals configured in `wallpapers/cabin-snow/manifest.json`):
 
-| Event | Default interval | Effect |
-|---|---|---|
-| `shooting_star` | 45 s – 3 min | A streak of light crosses the sky |
-| `blizzard_surge` | 3 – 8 min | Snow and wind spike for ~13 seconds |
-| `cabin_flicker` | 2 – 5 min | Window lights stutter as if losing power |
-| `window_shadow` | 4 – 10 min | An antlered silhouette appears briefly in a cabin window |
-| `owl_swoop` | 15 – 25 s | An owl swoops in from the left, perches on the tree, then departs |
+| Event | Effect |
+|---|---|
+| `shooting_star` | A streak of light crosses the sky |
+| `blizzard_surge` | Snow and wind spike for a short burst |
+| `cabin_flicker` | Window lights stutter as if losing power |
+| `window_shadow` | An antlered silhouette appears briefly in a cabin window |
+| `owl_swoop` | An owl swoops in from the left, perches on the tree, then departs |
+| `rabbit_hop` | A rabbit hops in from one side, pauses, then hops out the other side past the boulder |
 
 ### Listening in your wallpaper
 

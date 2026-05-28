@@ -112,6 +112,10 @@
       rightWindowShadowPin: [878, 703],
       // Owl perch point on the left tree — measure with ?debug, then fill in.
       owlPerch: [218, 468],
+      // Rabbit pause point and boulder detour — measured via ?debug.
+      rabbitGround:          [783, 769],
+      rabbitBoulderApproach: [1290, 783],
+      rabbitBoulderBottom:   [1348, 836],
     };
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -181,6 +185,7 @@
         case 'cabin_flicker':  triggerCabinFlicker();    break;
         case 'window_shadow':  windowShadow.trigger();   break;
         case 'owl_swoop':      owl.trigger();             break;
+        case 'rabbit_hop':     rabbit.trigger();          break;
       }
     }
 
@@ -849,6 +854,142 @@
     })();
 
     // ══════════════════════════════════════════════════════════════════════════
+    //  Rabbit — hops in from one side, pauses, hops out the other side.
+    //  Requires rabbitGround in ANCHORS (measure via ?debug).
+    // ══════════════════════════════════════════════════════════════════════════
+    const rabbit = (() => {
+      let _hopImg   = null;
+      let _stillImg = null;
+
+      const _hL = new Image();
+      _hL.onload = () => { _hopImg = _hL; };
+      _hL.src = 'rabbit-hop.png';
+
+      const _sL = new Image();
+      _sL.onload = () => { _stillImg = _sL; };
+      _sL.src = 'rabbit-still.png';
+
+      const active = [];
+
+      const IN_END      = 6.4;   // min hop-in seconds before pause check
+      const STILL_DUR   = 4.6;   // pause duration
+      const HOP_OUT_DUR = 7.4;   // hop-out travel time
+      const DUR         = 22.0;  // safety cap
+      const HOP_FREQ    = 2.0;   // hops per second — lower = bigger, more visible hops
+      const AIR_FRAC    = 0.50;  // 50% of hop cycle airborne, 50% grounded
+
+      function trigger() {
+        if (!ANCHORS.rabbitGround || active.length > 0) return;
+        active.push({ t0: performance.now(), dir: Math.random() < 0.5 ? 1 : -1, stillStart: null });
+      }
+
+      function draw(ctx, now) {
+        if (!active.length || !ANCHORS.rabbitGround || !imgNaturalW) return;
+
+        const a  = active[0];
+        const et = (now - a.t0) / 1000;
+
+        const endTime = a.stillStart !== null ? a.stillStart + STILL_DUR + HOP_OUT_DUR : DUR;
+        if (et >= endTime) { active.shift(); return; }
+
+        const ground   = paintToCanvas(...ANCHORS.rabbitGround);
+        const approach = ANCHORS.rabbitBoulderApproach ? paintToCanvas(...ANCHORS.rabbitBoulderApproach) : null;
+        const btm      = ANCHORS.rabbitBoulderBottom   ? paintToCanvas(...ANCHORS.rabbitBoulderBottom)   : null;
+        const { s }    = coverScale();
+        const rabH     = 29 * s;
+
+        const W   = window.innerWidth;
+        const pad = W * 0.13;
+
+        const startX = a.dir > 0 ? -pad : W + pad;
+        const exitX  = a.dir > 0 ? W + pad : -pad;
+        const flip   = a.dir > 0;
+
+        // Direction-aware Y track.
+        // dir=1 (L→R): slope ground→approach, sin-arc dip down to boulder bottom and back.
+        // dir=-1 (R→L): enter at boulder-bottom level, half-sine rise through arc, slope to ground.
+        function groundY(sx) {
+          if (!approach || !btm) return ground.y;
+          const ax = approach.x, ay = approach.y;
+          const bx = btm.x,      by = btm.y;
+          const gx = ground.x,   gy = ground.y;
+          const arcEnd = bx + (bx - ax);
+          const dip    = by - ay;
+
+          if (a.dir > 0) {
+            if (sx <= ax) {
+              const t = (sx - gx) / (ax - gx);
+              return gy + (ay - gy) * Math.max(0, Math.min(1, t));
+            }
+            if (sx <= arcEnd) {
+              const t = (sx - ax) / (arcEnd - ax);
+              return ay + Math.sin(t * Math.PI) * dip;
+            }
+            return ay;
+          } else {
+            if (sx > arcEnd) return by;
+            if (sx >= ax) {
+              const t = (sx - ax) / (arcEnd - ax);
+              return ay + Math.sin(t * Math.PI / 2) * dip;
+            }
+            const t = (sx - gx) / (ax - gx);
+            return gy + (ay - gy) * Math.max(0, Math.min(1, t));
+          }
+        }
+
+        let x, y, img;
+
+        if (a.stillStart === null) {
+          // Hop-in: x advances only while airborne; stationary while grounded.
+          // Each hop covers (total distance / total hops) — no sliding on landing.
+          const hopNum  = Math.floor(et * HOP_FREQ);
+          const hp      = (et * HOP_FREQ) % 1.0;
+          const totHops = IN_END * HOP_FREQ;
+          const f0      = Math.min(1, hopNum / totHops);
+          const f1      = Math.min(1, (hopNum + 1) / totHops);
+          const xFrac   = hp < AIR_FRAC ? f0 + (f1 - f0) * (hp / AIR_FRAC) : f1;
+          x = startX + (ground.x - startX) * xFrac;
+          const bounce  = hp < AIR_FRAC ? Math.sin((hp / AIR_FRAC) * Math.PI) * rabH * 0.8 : 0;
+          img = bounce > 0 ? _hopImg : _stillImg;
+          y = groundY(x) - bounce;
+          if (et >= IN_END && bounce === 0) a.stillStart = et;
+        } else {
+          const ss = et - a.stillStart;
+          if (ss < STILL_DUR) {
+            img = _stillImg;
+            x   = ground.x;
+            y   = ground.y;
+          } else {
+            const tOut    = ss - STILL_DUR;
+            const hopNum  = Math.floor(tOut * HOP_FREQ);
+            const hp      = (tOut * HOP_FREQ) % 1.0;
+            const totHops = HOP_OUT_DUR * HOP_FREQ;
+            const f0      = Math.min(1, hopNum / totHops);
+            const f1      = Math.min(1, (hopNum + 1) / totHops);
+            const xFrac   = hp < AIR_FRAC ? f0 + (f1 - f0) * (hp / AIR_FRAC) : f1;
+            x = ground.x + (exitX - ground.x) * xFrac;
+            const bounce  = hp < AIR_FRAC ? Math.sin((hp / AIR_FRAC) * Math.PI) * rabH * 0.8 : 0;
+            img = bounce > 0 ? _hopImg : _stillImg;
+            y = groundY(x) - bounce;
+          }
+        }
+
+        const alpha = Math.min(Math.min(1, et / 0.4), Math.max(0, (endTime - et) / 0.8));
+        if (!img) return;
+        const rabW = rabH * (img.naturalWidth / img.naturalHeight);
+
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.translate(x, y);
+        if (flip) ctx.scale(-1, 1);
+        ctx.drawImage(img, -rabW * 0.5, -rabH, rabW, rabH);
+        ctx.restore();
+      }
+
+      return { trigger, draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
     //  Effects layer — draw order: stars → owl → shadow → glow → smoke
     //  Shadow is drawn BEFORE the window glow so the amber light overlays it,
     //  making the figure look like it's inside the cabin behind the glass.
@@ -859,6 +1000,7 @@
       stars.draw(fxCtx, t);
       shootingStar.draw(fxCtx, performance.now());
       owl.draw(fxCtx, performance.now());
+      rabbit.draw(fxCtx, performance.now());
       windowShadow.draw(fxCtx, performance.now());
       windowGlow.draw(fxCtx, t);
       smoke.update(dt, t);

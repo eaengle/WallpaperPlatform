@@ -4,10 +4,11 @@
   "description": "Aurora night cabin with layered snowfall",
   "tier": "free",
   "events": [
-    { "name": "shooting_star",  "label": "Shooting Star",  "minSeconds": 15, "maxSeconds": 25 },
+    { "name": "shooting_star",  "label": "Shooting Star",  "minSeconds": 5, "maxSeconds": 15 },
     { "name": "blizzard_surge", "label": "Blizzard Surge", "minSeconds": 15, "maxSeconds": 25 },
     { "name": "cabin_flicker",  "label": "Cabin Flicker",  "minSeconds": 15, "maxSeconds": 25 },
-    { "name": "window_shadow",  "label": "Window Shadow",  "minSeconds": 15, "maxSeconds": 25 },
-    { "name": "owl_swoop",      "label": "Owl Swoop",      "minSeconds": 15, "maxSeconds": 25 }
+    { "name": "window_shadow",  "label": "Window Shadow",  "minSeconds": 30, "maxSeconds": 120 },
+    { "name": "owl_swoop",      "label": "Owl Swoop",      "minSeconds": 30, "maxSeconds": 120 },
+    { "name": "rabbit_hop",     "label": "Rabbit Hop",     "minSeconds": 30, "maxSeconds": 120 }
   ]
 }
