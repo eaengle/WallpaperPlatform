@@ -79,13 +79,16 @@ public partial class MainWindow : Window
 
     public void FireEvent(string name) => _events?.PostEvent(name);
 
+    public string CurrentWallpaper { get; private set; } = "cabin-snow";
+
     public void LoadWallpaper(string name)
     {
         var path = Path.Combine(
             AppDomain.CurrentDomain.BaseDirectory,
             "wallpapers", name, "index.html");
 
-        if (File.Exists(path))
-            WebView.CoreWebView2.Navigate("file:///" + path.Replace('\\', '/'));
+        if (!File.Exists(path)) return;
+        CurrentWallpaper = name;
+        WebView.CoreWebView2.Navigate("file:///" + path.Replace('\\', '/'));
     }
 }

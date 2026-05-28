@@ -11,7 +11,7 @@ Wallpapers are self-contained HTML/JS/WebGL packages — the same web skills you
 - Renders wallpapers **behind desktop icons** using the Windows `WorkerW` layer
 - Full **4K / multi-DPI** support
 - Wallpapers are plain **HTML + JavaScript** — use Canvas, WebGL, Three.js, anything
-- **System tray** control — trigger scene events manually or exit cleanly
+- **System tray** control — switch scenes, trigger events manually, or exit cleanly
 - Wallpaper packages defined by a simple `manifest.json`
 - **Weather bridge** — live snow/wind data posted to the active wallpaper every 10 seconds
 - **Scene event bridge** — C# fires named events on random schedules; wallpapers react with visual effects
@@ -44,6 +44,10 @@ Exit via the system tray icon (right-click → Exit).
 Right-clicking the tray icon shows:
 
 ```
+Select Scene   ▶
+    ✓ Cabin in Snow
+      Default
+──────────────────
 Trigger Event  ▶
     Shooting Star
     Blizzard Surge
@@ -51,6 +55,8 @@ Trigger Event  ▶
 ──────────────────
 Exit
 ```
+
+**Select Scene** lists every wallpaper found in the `wallpapers/` directory. Display names come from each package's `manifest.json`. The active scene is ticked. Selecting an entry switches the wallpaper immediately with no restart required.
 
 **Trigger Event** fires any scene event immediately — useful for testing or for users who want to see an effect on demand. Events are otherwise fired automatically by the C# event bridge on random schedules.
 
@@ -249,7 +255,7 @@ Edit `tools/IconGen/Program.cs` to change the design, then rebuild the main proj
 
 ## Roadmap
 
-- [ ] Wallpaper picker UI  
+- [x] Scene switcher via system tray  
 - [ ] Windows startup registration  
 - [ ] Multi-monitor support  
 - [ ] License key validation for premium wallpaper packs
