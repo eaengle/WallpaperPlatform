@@ -10,7 +10,7 @@
       inset: 0;
       background: url('cabin.png') center / cover no-repeat;
     }
-    #snow-far, #snow-near {
+    #snow-far, #snow-near, #effects, #dbg-canvas {
       position: fixed;
       inset: 0;
       pointer-events: none;
@@ -18,32 +18,127 @@
     #snow-near {
       filter: blur(2.5px);
     }
+    /* debug overlay captures clicks above everything */
+    #dbg-overlay {
+      position: fixed;
+      inset: 0;
+      cursor: crosshair;
+      z-index: 9000;
+      display: none;
+    }
+    #dbg-panel {
+      position: fixed;
+      top: 8px;
+      left: 8px;
+      background: rgba(0,0,0,0.72);
+      color: #0f0;
+      font: 12px/1.6 monospace;
+      padding: 8px 10px;
+      border-radius: 4px;
+      z-index: 9999;
+      pointer-events: none;
+      display: none;
+      max-width: 420px;
+      white-space: pre;
+    }
   </style>
 </head>
 <body>
   <div id="bg"></div>
   <canvas id="snow-far"></canvas>
+  <canvas id="effects"></canvas>
   <canvas id="snow-near"></canvas>
+  <canvas id="dbg-canvas"></canvas>
+  <div id="dbg-overlay"></div>
+  <div id="dbg-panel"></div>
+
   <script>
-    const farCanvas  = document.getElementById('snow-far');
-    const nearCanvas = document.getElementById('snow-near');
-    const farCtx     = farCanvas.getContext('2d');
-    const nearCtx    = nearCanvas.getContext('2d');
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Image-anchor system
+    //  paintToCanvas(px, py) — converts image-pixel coords to screen coords,
+    //  accounting for CSS background-size:cover scaling on any monitor.
+    // ══════════════════════════════════════════════════════════════════════════
+    let imgNaturalW = 0, imgNaturalH = 0;
+
+    const _probe = new Image();
+    _probe.onload = () => {
+      imgNaturalW = _probe.naturalWidth;
+      imgNaturalH = _probe.naturalHeight;
+      if (debugMode) updateDebugPanel(`Image loaded: ${imgNaturalW}×${imgNaturalH}\nClick anywhere to capture paint coords.`);
+    };
+    _probe.src = 'cabin.png';
+
+    function coverScale() {
+      const W = window.innerWidth, H = window.innerHeight;
+      const s  = Math.max(W / imgNaturalW, H / imgNaturalH);
+      const ox = (W - imgNaturalW * s) / 2;
+      const oy = (H - imgNaturalH * s) / 2;
+      return { s, ox, oy };
+    }
+
+    // Convert image-pixel (px, py) → canvas/screen pixel
+    function paintToCanvas(px, py) {
+      if (!imgNaturalW) return { x: px, y: py };
+      const { s, ox, oy } = coverScale();
+      return { x: px * s + ox, y: py * s + oy };
+    }
+
+    // Convert screen click → image-pixel (inverse, for debug mode)
+    function canvasToPaint(sx, sy) {
+      if (!imgNaturalW) return { px: 0, py: 0 };
+      const { s, ox, oy } = coverScale();
+      return { px: Math.round((sx - ox) / s), py: Math.round((sy - oy) / s) };
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Anchor definitions — measured via ?debug click tool
+    //  Format: [paintX, paintY] in original image pixels
+    //  Leave as null until you've measured them with the debug tool.
+    // ══════════════════════════════════════════════════════════════════════════
+    const ANCHORS = {
+      chimneyTop:    [901,  540],
+      leftWindow:    [766,  679],
+      rightWindow:   [888,  679],
+      groundLevel:   [828,  743],
+      leftRoofEdge:  [704,  632],
+      rightRoofEdge: [953,  631],
+      leftTreeTop:   [371,  439],
+      rightTreeTop:  [1242, 465],
+      pondCorner:    [591,  839],
+      boulderCenter: [1394, 763],
+    };
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Canvas setup
+    // ══════════════════════════════════════════════════════════════════════════
+    const farCanvas    = document.getElementById('snow-far');
+    const nearCanvas   = document.getElementById('snow-near');
+    const fxCanvas     = document.getElementById('effects');
+    const dbgCanvas    = document.getElementById('dbg-canvas');
+    const farCtx       = farCanvas.getContext('2d');
+    const nearCtx      = nearCanvas.getContext('2d');
+    const fxCtx        = fxCanvas.getContext('2d');
+    const dbgCtx       = dbgCanvas.getContext('2d');
 
     function resize() {
-      farCanvas.width  = nearCanvas.width  = window.innerWidth;
-      farCanvas.height = nearCanvas.height = window.innerHeight;
+      const W = window.innerWidth, H = window.innerHeight;
+      for (const c of [farCanvas, nearCanvas, fxCanvas, dbgCanvas]) {
+        c.width = W; c.height = H;
+      }
     }
     resize();
-    window.addEventListener('resize', () => { resize(); initFlakes(); });
+    window.addEventListener('resize', () => { resize(); initFlakes(); smoke.init(); redrawDebugPins(); });
 
     function rnd(min, max) { return min + Math.random() * (max - min); }
+    function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+    const TAU = Math.PI * 2;
 
-    // ── Weather state – smoothly lerped each frame ──────────────────────────
-    // Defaults provide a nice gentle snowfall before the first API response.
-    let targetSnow    = 0.7;   // 0 = invisible, 1 = heavy
-    let targetWindX   = 0;     // real-world wind direction push (-1 to 1)
-    let targetWindStr = 0;     // real-world wind strength (0-1)
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Weather state — smoothly lerped each frame
+    // ══════════════════════════════════════════════════════════════════════════
+    let targetSnow    = 0.7;
+    let targetWindX   = 0;
+    let targetWindStr = 0;
     let curSnow       = 0.7;
     let curWindX      = 0;
     let curWindStr    = 0;
@@ -58,7 +153,9 @@
       } catch {}
     });
 
-    // ── Far layer: many small crisp flakes ─────────────────────────────────
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Snow — far layer
+    // ══════════════════════════════════════════════════════════════════════════
     const FAR_COUNT = 300;
 
     function makeFarFlake() {
@@ -75,7 +172,9 @@
       };
     }
 
-    // ── Near layer: fewer large bokeh flakes (canvas has CSS blur) ──────────
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Snow — near (bokeh) layer
+    // ══════════════════════════════════════════════════════════════════════════
     const NEAR_COUNT = 50;
 
     function makeNearFlake() {
@@ -99,11 +198,123 @@
     }
     initFlakes();
 
-    // ── Ambient wind: two overlapping sines for organic feel ────────────────
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Ambient wind
+    // ══════════════════════════════════════════════════════════════════════════
     function ambientWind(t) {
       return Math.sin(t * 0.00023) * 0.30 + Math.sin(t * 0.00053) * 0.18;
     }
 
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Chimney smoke
+    // ══════════════════════════════════════════════════════════════════════════
+    const smoke = (() => {
+      let puffs = [];
+
+      function spawnPos() {
+        return ANCHORS.chimneyTop ? paintToCanvas(...ANCHORS.chimneyTop)
+                                  : { x: window.innerWidth * 0.5, y: window.innerHeight * 0.4 };
+      }
+
+      function spawn(ageFraction = 0) {
+        const { x, y } = spawnPos();
+        const maxLife = rnd(6.0, 10.0);
+        const initSz  = rnd(4, 8);
+        return {
+          x:       x + rnd(-3, 3),
+          y,
+          vx:      rnd(-2, 4),
+          vy:      rnd(-28, -16),
+          initSz,
+          sz:      initSz,
+          maxSz:   rnd(28, 46),
+          life:    ageFraction * maxLife,
+          maxLife,
+          warm:    rnd(0.3, 0.9),
+          phase:   Math.random() * TAU,
+        };
+      }
+
+      function init() {
+        puffs = Array.from({ length: 26 }, (_, i) => spawn(i / 26));
+      }
+
+      function update(dt, t) {
+        const s        = dt * 0.001;
+        const windPush = curWindX * curWindStr * 18;
+
+        for (const p of puffs) {
+          p.life += s;
+          const prog      = Math.max(0, p.life / p.maxLife);
+          const turbScale = clamp((prog - 0.30) / 0.55, 0, 1);
+
+          const tx = (Math.sin(t * 0.65 + p.phase + p.y * 0.003) * 8
+                   +  Math.cos(t * 0.37 + p.x * 0.005) * 5) * turbScale;
+          const ty =  Math.cos(t * 0.50 + p.phase) * 3 * turbScale;
+
+          p.vx += (tx + windPush) * s;
+          p.vy += ty * s;
+          p.vx *= 1 - s * 0.22;
+          p.vy *= 1 - s * 0.12;
+          p.x  += p.vx * s;
+          p.y  += p.vy * s;
+
+          const ease = 1 - (1 - Math.min(prog, 1)) ** 2;
+          p.sz = p.initSz + (p.maxSz - p.initSz) * ease;
+
+          if (p.life > p.maxLife) Object.assign(p, spawn(0));
+        }
+      }
+
+      function draw(ctx) {
+        ctx.save();
+        for (const p of puffs) {
+          if (p.sz < 1) continue;
+          const prog = Math.max(0, Math.min(1, p.life / p.maxLife));
+
+          let fade;
+          if (prog < 0.12)      fade = prog / 0.12;
+          else if (prog < 0.58) fade = 1;
+          else                  fade = 1 - (prog - 0.58) / 0.42;
+
+          const alpha = 0.18 * fade * fade;
+          if (alpha < 0.003) continue;
+
+          const w = p.warm * Math.max(0, 1 - prog * 0.85);
+          const r = Math.round(155 + w * 18);
+          const g = Math.round(152 + w * 10);
+          const b = 162;
+
+          const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.sz);
+          grad.addColorStop(0,    `rgba(${r},${g},${b},${Math.min(0.999, alpha * 1.7).toFixed(3)})`);
+          grad.addColorStop(0.45, `rgba(${r},${g},${b},${alpha.toFixed(3)})`);
+          grad.addColorStop(1,    `rgba(${r},${g},${b},0)`);
+
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.sz, 0, TAU);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+
+      return { init, update, draw };
+    })();
+
+    smoke.init();
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Effects layer
+    // ══════════════════════════════════════════════════════════════════════════
+    function drawEffects(dt, t) {
+      fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
+      smoke.update(dt, t);
+      smoke.draw(fxCtx);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Main loop
+    // ══════════════════════════════════════════════════════════════════════════
     let t    = 0;
     let last = performance.now();
 
@@ -114,25 +325,21 @@
 
       const step = dt / 16.667;
 
-      // Lerp weather values toward targets (slow = gentle transitions)
       const snowLerp = 0.008 * step;
       const windLerp = 0.005 * step;
-      curSnow   += (targetSnow    - curSnow)   * snowLerp;
-      curWindX  += (targetWindX   - curWindX)  * windLerp;
-      curWindStr += (targetWindStr - curWindStr) * windLerp;
+      curSnow    += (targetSnow    - curSnow)    * snowLerp;
+      curWindX   += (targetWindX   - curWindX)   * windLerp;
+      curWindStr += (targetWindStr - curWindStr)  * windLerp;
 
-      // Total wind = ambient organic sway + real-world directional push
       const w = ambientWind(t) + curWindX * curWindStr * 4.0;
 
       const cw = farCanvas.width;
       const ch = farCanvas.height;
 
-      // ── Far flakes ────────────────────────────────────────────────────────
+      // Far flakes
       farCtx.clearRect(0, 0, cw, ch);
-
       for (const f of farFlakes) {
-        const sway = Math.sin(t * 0.001 * f.freq + f.phase) * f.amp;
-        // Heavier snow falls faster
+        const sway       = Math.sin(t * 0.001 * f.freq + f.phase) * f.amp;
         const speedScale = 0.6 + 0.4 * curSnow;
         f.x += (w + sway * 0.06) * step;
         f.y += f.vy * speedScale * step;
@@ -141,10 +348,7 @@
         if (f.x >  cw + 4) { f.x = -4; }
         if (f.x < -4)      { f.x =  cw + 4; }
 
-        // Sparkle probability rises with snow intensity
-        if (f.sparkle <= 0 && Math.random() < 0.0003 * curSnow * step) {
-          f.sparkle = 1.0;
-        }
+        if (f.sparkle <= 0 && Math.random() < 0.0003 * curSnow * step) f.sparkle = 1.0;
 
         const drawOpacity = f.opacity * curSnow;
         farCtx.beginPath();
@@ -158,20 +362,17 @@
           farCtx.strokeStyle = `rgba(230, 245, 255, ${sOp})`;
           farCtx.lineWidth   = 0.7;
           farCtx.beginPath();
-          farCtx.moveTo(f.x - sz, f.y);
-          farCtx.lineTo(f.x + sz, f.y);
-          farCtx.moveTo(f.x, f.y - sz);
-          farCtx.lineTo(f.x, f.y + sz);
+          farCtx.moveTo(f.x - sz, f.y); farCtx.lineTo(f.x + sz, f.y);
+          farCtx.moveTo(f.x, f.y - sz); farCtx.lineTo(f.x, f.y + sz);
           farCtx.stroke();
           f.sparkle -= step * 0.04;
         }
       }
 
-      // ── Near (bokeh) flakes ───────────────────────────────────────────────
+      // Near (bokeh) flakes
       nearCtx.clearRect(0, 0, cw, ch);
-
       for (const f of nearFlakes) {
-        const sway      = Math.sin(t * 0.001 * f.freq + f.phase) * f.amp;
+        const sway       = Math.sin(t * 0.001 * f.freq + f.phase) * f.amp;
         const speedScale = 0.6 + 0.4 * curSnow;
         f.x += (w * 1.15 + sway * 0.07) * step;
         f.y += f.vy * speedScale * step;
@@ -192,10 +393,102 @@
         nearCtx.fill();
       }
 
+      drawEffects(dt, t);
+
       requestAnimationFrame(frame);
     }
 
     requestAnimationFrame(frame);
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Debug mode  —  append ?debug to URL to activate
+    //  Click anywhere to capture paint-pixel coordinates.
+    //  Coordinates are logged to console and displayed on-screen.
+    //  Use these values to populate the ANCHORS table above.
+    // ══════════════════════════════════════════════════════════════════════════
+    const debugMode = new URLSearchParams(location.search).has('debug');
+
+    const dbgPanel   = document.getElementById('dbg-panel');
+    const dbgOverlay = document.getElementById('dbg-overlay');
+
+    const debugPins = [];  // { sx, sy, px, py, label }
+
+    function updateDebugPanel(msg) {
+      dbgPanel.textContent = msg;
+    }
+
+    function redrawDebugPins() {
+      if (!debugMode) return;
+      dbgCtx.clearRect(0, 0, dbgCanvas.width, dbgCanvas.height);
+      dbgCtx.font        = '11px monospace';
+      dbgCtx.lineWidth   = 1;
+
+      for (const pin of debugPins) {
+        const { x, y } = paintToCanvas(pin.px, pin.py);
+
+        // Crosshair
+        dbgCtx.strokeStyle = 'rgba(255, 0, 220, 0.85)';
+        dbgCtx.beginPath();
+        dbgCtx.moveTo(x - 10, y); dbgCtx.lineTo(x + 10, y);
+        dbgCtx.moveTo(x, y - 10); dbgCtx.lineTo(x, y + 10);
+        dbgCtx.stroke();
+
+        // Dot
+        dbgCtx.fillStyle = 'rgba(255, 0, 220, 0.9)';
+        dbgCtx.beginPath();
+        dbgCtx.arc(x, y, 3, 0, Math.PI * 2);
+        dbgCtx.fill();
+
+        // Label
+        const label = pin.label || `(${pin.px}, ${pin.py})`;
+        dbgCtx.fillStyle = 'rgba(0,0,0,0.6)';
+        dbgCtx.fillRect(x + 6, y - 14, label.length * 6.5 + 6, 16);
+        dbgCtx.fillStyle = '#0f0';
+        dbgCtx.fillText(label, x + 9, y - 2);
+      }
+    }
+
+    if (debugMode) {
+      dbgPanel.style.display   = 'block';
+      dbgOverlay.style.display = 'block';
+
+      updateDebugPanel(imgNaturalW
+        ? `Image: ${imgNaturalW}×${imgNaturalH}\nClick to capture paint coords.`
+        : 'Loading image dimensions…');
+
+      let pinCount = 0;
+
+      dbgOverlay.addEventListener('click', e => {
+        if (!imgNaturalW) {
+          updateDebugPanel('Image not loaded yet — wait a moment and try again.');
+          return;
+        }
+
+        const { px, py } = canvasToPaint(e.clientX, e.clientY);
+        pinCount++;
+        const label = `${pinCount}: (${px}, ${py})`;
+
+        debugPins.push({ px, py, label });
+        console.log(`[debug] pin ${pinCount}: paintToCanvas coord = [${px}, ${py}]`);
+
+        updateDebugPanel(
+          `Image: ${imgNaturalW}×${imgNaturalH}  Screen: ${window.innerWidth}×${window.innerHeight}\n` +
+          `Last click: [${px}, ${py}]  (pin ${pinCount})\n\n` +
+          debugPins.map(p => `  ${p.label}`).join('\n')
+        );
+
+        redrawDebugPins();
+      });
+
+      // Right-click clears all pins
+      dbgOverlay.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        debugPins.length = 0;
+        pinCount = 0;
+        dbgCtx.clearRect(0, 0, dbgCanvas.width, dbgCanvas.height);
+        updateDebugPanel(`Image: ${imgNaturalW}×${imgNaturalH}\nPins cleared. Click to capture.`);
+      });
+    }
   </script>
 </body>
 </html>
