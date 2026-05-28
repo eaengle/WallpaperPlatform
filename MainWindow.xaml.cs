@@ -7,7 +7,8 @@ namespace WallpaperPlatform;
 
 public partial class MainWindow : Window
 {
-    private WeatherBridge? _weather;
+    private WeatherBridge?       _weather;
+    private WallpaperEventBridge? _events;
 
     public MainWindow()
     {
@@ -20,7 +21,7 @@ public partial class MainWindow : Window
         Height = SystemParameters.PrimaryScreenHeight;
 
         Loaded += OnLoaded;
-        Closed += (_, _) => _weather?.Dispose();
+        Closed += (_, _) => { _weather?.Dispose(); _events?.Dispose(); };
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
@@ -65,7 +66,18 @@ public partial class MainWindow : Window
         _weather?.Dispose();
         _weather = new WeatherBridge(WebView);
         _weather.Start();
+
+        _events?.Dispose();
+        _events = new WallpaperEventBridge(WebView,
+        [
+            new WallpaperEventBridge.EventDef("shooting_star",  TimeSpan.FromSeconds(45), TimeSpan.FromMinutes(3)),
+            new WallpaperEventBridge.EventDef("blizzard_surge", TimeSpan.FromMinutes(3),  TimeSpan.FromMinutes(8)),
+            new WallpaperEventBridge.EventDef("cabin_flicker",  TimeSpan.FromMinutes(2),  TimeSpan.FromMinutes(5)),
+        ]);
+        _events.Start();
     }
+
+    public void FireEvent(string name) => _events?.PostEvent(name);
 
     public void LoadWallpaper(string name)
     {

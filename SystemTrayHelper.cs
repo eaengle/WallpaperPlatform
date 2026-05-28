@@ -15,16 +15,31 @@ internal sealed class SystemTrayHelper : IDisposable
         _window = window;
         _icon = new NotifyIcon
         {
-            Icon = SystemIcons.Application,
-            Text = "Wallpaper Platform",
-            Visible = true,
-            ContextMenuStrip = BuildMenu()
+            Icon             = LoadAppIcon(),
+            Text             = "Wallpaper Platform",
+            Visible          = true,
+            ContextMenuStrip = BuildMenu(),
         };
+    }
+
+    private static Icon LoadAppIcon()
+    {
+        var stream = typeof(SystemTrayHelper).Assembly
+            .GetManifestResourceStream("WallpaperPlatform.app.ico");
+        return stream is not null ? new Icon(stream) : SystemIcons.Application;
     }
 
     private ContextMenuStrip BuildMenu()
     {
         var menu = new ContextMenuStrip();
+
+        var events = new ToolStripMenuItem("Trigger Event");
+        events.DropDownItems.Add("Shooting Star",  null, (_, _) => _window.FireEvent("shooting_star"));
+        events.DropDownItems.Add("Blizzard Surge", null, (_, _) => _window.FireEvent("blizzard_surge"));
+        events.DropDownItems.Add("Cabin Flicker",  null, (_, _) => _window.FireEvent("cabin_flicker"));
+        menu.Items.Add(events);
+
+        menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit", null, (_, _) => ExitRequested?.Invoke());
         return menu;
     }

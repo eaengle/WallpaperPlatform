@@ -11,9 +11,11 @@ Wallpapers are self-contained HTML/JS/WebGL packages — the same web skills you
 - Renders wallpapers **behind desktop icons** using the Windows `WorkerW` layer
 - Full **4K / multi-DPI** support
 - Wallpapers are plain **HTML + JavaScript** — use Canvas, WebGL, Three.js, anything
-- **System tray** icon for control (no taskbar clutter)
+- **System tray** control — trigger scene events manually or exit cleanly
 - Wallpaper packages defined by a simple `manifest.json`
-- **Event bridge** — C# posts `postMessage` events to wallpapers for real-time scene control
+- **Weather bridge** — live snow/wind data posted to the active wallpaper every 10 seconds
+- **Scene event bridge** — C# fires named events on random schedules; wallpapers react with visual effects
+- **Paint-anchor system** — pin effects to image-pixel coordinates; they scale to any monitor automatically
 
 ---
 
@@ -34,6 +36,23 @@ dotnet run --project WallpaperPlatform
 ```
 
 Exit via the system tray icon (right-click → Exit).
+
+---
+
+## System Tray
+
+Right-clicking the tray icon shows:
+
+```
+Trigger Event  ▶
+    Shooting Star
+    Blizzard Surge
+    Cabin Flicker
+──────────────────
+Exit
+```
+
+**Trigger Event** fires any scene event immediately — useful for testing or for users who want to see an effect on demand. Events are otherwise fired automatically by the C# event bridge on random schedules.
 
 ---
 
@@ -92,7 +111,11 @@ WallpaperPlatform/
 ├── MainWindow.xaml / .cs           — full-screen WebView2 host, DPI-aware sizing
 ├── DesktopHelper.cs                — Win32 P/Invoke: WorkerW attachment
 ├── SystemTrayHelper.cs             — system tray icon and menu
-├── WeatherBridge.cs                — periodic event bridge; posts snow/wind data to active wallpaper
+├── WeatherBridge.cs                — periodic weather data bridge (snow, wind)
+├── WallpaperEventBridge.cs         — C#-scheduled scene event bridge
+├── app.ico                         — application icon (regenerate via tools/IconGen)
+├── tools/
+│   └── IconGen/                    — .NET console tool that generates app.ico
 └── wallpapers/
     ├── default/                    — built-in starfield wallpaper
     └── cabin-snow/                 — aurora cabin scene with layered snowfall, chimney smoke,
@@ -110,28 +133,74 @@ Both are handled automatically. A diagnostic file is written to `%TEMP%\Wallpape
 
 ---
 
-## Event Bridge
+## Message Bridge
 
-Wallpapers receive live data from C# via `window.chrome.webview` message events. The active bridge posts a JSON payload on load and every 10 seconds:
+Wallpapers receive data from C# via `window.chrome.webview` message events. Two message types are in use.
+
+### Weather data
+
+Posted on load and every 10 seconds by `WeatherBridge`:
 
 ```json
 { "type": "weather", "snow": 1.4, "wind": 0.8, "windX": -0.6 }
 ```
 
-Listen in your wallpaper:
+| Field | Range | Description |
+|---|---|---|
+| `snow` | 0.3 – 3.0 | Snowfall intensity (opacity + fall speed) |
+| `wind` | 0.0 – 1.5 | Wind strength |
+| `windX` | -1.0 – 1.0 | Wind direction (negative = left) |
+
+### Scene events
+
+Posted by `WallpaperEventBridge` on randomised C# timers, or immediately when triggered from the system tray:
+
+```json
+{ "type": "event", "name": "shooting_star", "data": null }
+```
+
+The `data` field is optional and event-specific. Built-in events for the cabin-snow scene:
+
+| Event | Default interval | Effect |
+|---|---|---|
+| `shooting_star` | 45 s – 3 min | A streak of light crosses the sky |
+| `blizzard_surge` | 3 – 8 min | Snow and wind spike for ~13 seconds |
+| `cabin_flicker` | 2 – 5 min | Window lights stutter as if losing power |
+
+### Listening in your wallpaper
 
 ```javascript
 window.chrome?.webview?.addEventListener('message', e => {
   const msg = JSON.parse(e.data);
+
   if (msg.type === 'weather') {
-    // msg.snow  — intensity 0.3–3.0 (drives opacity + fall speed)
-    // msg.wind  — strength 0.0–1.5
-    // msg.windX — direction -1.0 (left) to 1.0 (right)
+    // update targetSnow, targetWindX, targetWindStr
+    // lerp toward them each frame for smooth transitions
+  } else if (msg.type === 'event') {
+    handleSceneEvent(msg.name, msg.data);
   }
 });
 ```
 
-Lerp toward received values each frame for smooth transitions. See `wallpapers/cabin-snow/index.html` for a full example.
+See `wallpapers/cabin-snow/index.html` for a complete implementation.
+
+### Adding events in C#
+
+Register events in `MainWindow.OnNavigationCompleted` by passing `EventDef` records to `WallpaperEventBridge`:
+
+```csharp
+_events = new WallpaperEventBridge(WebView,
+[
+    new WallpaperEventBridge.EventDef("my_event", TimeSpan.FromMinutes(2), TimeSpan.FromMinutes(10)),
+]);
+_events.Start();
+```
+
+You can also fire any event immediately from C# at any time:
+
+```csharp
+_events.PostEvent("my_event");
+```
 
 ---
 
@@ -166,12 +235,25 @@ Paste the logged values into your `ANCHORS` table. They will scale correctly to 
 
 ---
 
+## Regenerating the Icon
+
+The app icon is generated by a small .NET tool:
+
+```bash
+dotnet run --project tools/IconGen -- path/to/app.ico
+```
+
+Edit `tools/IconGen/Program.cs` to change the design, then rebuild the main project to pick up the new `app.ico`.
+
+---
+
 ## Roadmap
 
 - [ ] Wallpaper picker UI  
 - [ ] Windows startup registration  
 - [ ] Multi-monitor support  
-- [ ] License key validation for premium wallpaper packs  
+- [ ] License key validation for premium wallpaper packs
+- [ ] Event definitions driven by `manifest.json` (per-wallpaper event schedules)
 
 ---
 

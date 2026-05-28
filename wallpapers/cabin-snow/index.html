@@ -143,13 +143,49 @@
     let curWindX      = 0;
     let curWindStr    = 0;
 
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Event state — driven by C# WallpaperEventBridge
+    // ══════════════════════════════════════════════════════════════════════════
+    let weatherPaused = false;   // suppresses weather updates during scene events
+
+    // Blizzard surge: override snow/wind for a timed burst
+    let blizzardTimer = 0;       // ms remaining
+
+    function triggerBlizzard() {
+      weatherPaused = true;
+      targetSnow    = 2.6;
+      targetWindStr = 1.9;
+      targetWindX   = (Math.random() < 0.5 ? 1 : -1) * (0.5 + Math.random() * 0.5);
+      blizzardTimer = 13000;
+    }
+
+    // Cabin power flicker: rapid light stutter on the windows
+    let flickerMul   = 1;        // multiplied into window glow brightness
+    let flickerTimer = 0;        // ms remaining
+
+    function triggerCabinFlicker() {
+      flickerTimer = 2800;
+    }
+
+    // Event dispatcher — called from message listener below
+    function handleSceneEvent(name /*, data*/) {
+      switch (name) {
+        case 'shooting_star':  shootingStar.trigger(); break;
+        case 'blizzard_surge': triggerBlizzard();       break;
+        case 'cabin_flicker':  triggerCabinFlicker();   break;
+      }
+    }
+
     window.chrome?.webview?.addEventListener('message', e => {
       try {
         const msg = JSON.parse(e.data);
-        if (msg.type !== 'weather') return;
-        targetSnow    = msg.snow;
-        targetWindX   = msg.windX;
-        targetWindStr = msg.wind;
+        if (msg.type === 'weather' && !weatherPaused) {
+          targetSnow    = msg.snow;
+          targetWindX   = msg.windX;
+          targetWindStr = msg.wind;
+        } else if (msg.type === 'event') {
+          handleSceneEvent(msg.name, msg.data);
+        }
       } catch {}
     });
 
@@ -304,6 +340,86 @@
     smoke.init();
 
     // ══════════════════════════════════════════════════════════════════════════
+    //  Shooting star
+    // ══════════════════════════════════════════════════════════════════════════
+    const shootingStar = (() => {
+      const active = [];
+
+      function trigger() {
+        const W = window.innerWidth;
+        // Sky boundary: same calculation as stars module
+        const skyBot = imgNaturalW
+          ? paintToCanvas(...(ANCHORS.leftTreeTop[1] < ANCHORS.rightTreeTop[1]
+              ? ANCHORS.leftTreeTop : ANCHORS.rightTreeTop)).y * 0.96
+          : window.innerHeight * 0.55;
+
+        const sx    = W * (0.05 + Math.random() * 0.9);
+        const sy    = skyBot * (0.05 + Math.random() * 0.50);
+        const len   = 180 + Math.random() * 120;
+        const pitch = Math.PI * (0.08 + Math.random() * 0.18); // 14–46° below horizontal
+        const dir   = Math.random() < 0.5 ? 1 : -1;
+
+        active.push({
+          sx, sy,
+          dx: dir * Math.cos(pitch) * len,
+          dy: Math.sin(pitch) * len,
+          t0:  performance.now(),
+          dur: 700 + Math.random() * 500,
+        });
+      }
+
+      function draw(ctx, now) {
+        for (let i = active.length - 1; i >= 0; i--) {
+          const s    = active[i];
+          const prog = (now - s.t0) / s.dur;
+          if (prog >= 1) { active.splice(i, 1); continue; }
+
+          // Fade envelope: quick in, hold, fade out
+          let alpha;
+          if      (prog < 0.12) alpha = prog / 0.12;
+          else if (prog < 0.65) alpha = 1;
+          else                  alpha = 1 - (prog - 0.65) / 0.35;
+
+          const headX = s.sx + s.dx * prog;
+          const headY = s.sy + s.dy * prog;
+          const tailT = Math.max(0, prog - 0.30);
+          const tailX = s.sx + s.dx * tailT;
+          const tailY = s.sy + s.dy * tailT;
+
+          ctx.save();
+          ctx.globalCompositeOperation = 'screen';
+
+          // Streak trail
+          const trail = ctx.createLinearGradient(tailX, tailY, headX, headY);
+          trail.addColorStop(0,   'rgba(255,255,255,0)');
+          trail.addColorStop(0.5, `rgba(210,230,255,${(alpha * 0.45).toFixed(3)})`);
+          trail.addColorStop(1,   `rgba(255,255,255,${(alpha * 0.88).toFixed(3)})`);
+          ctx.strokeStyle = trail;
+          ctx.lineWidth   = 1.8;
+          ctx.lineCap     = 'round';
+          ctx.beginPath();
+          ctx.moveTo(tailX, tailY);
+          ctx.lineTo(headX, headY);
+          ctx.stroke();
+
+          // Bright head glow
+          const gr = ctx.createRadialGradient(headX, headY, 0, headX, headY, 9);
+          gr.addColorStop(0,   `rgba(255,255,255,${(alpha * 0.95).toFixed(3)})`);
+          gr.addColorStop(0.3, `rgba(220,235,255,${(alpha * 0.60).toFixed(3)})`);
+          gr.addColorStop(1,   'rgba(200,220,255,0)');
+          ctx.fillStyle = gr;
+          ctx.beginPath();
+          ctx.arc(headX, headY, 9, 0, TAU);
+          ctx.fill();
+
+          ctx.restore();
+        }
+      }
+
+      return { trigger, draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
     //  Stars
     // ══════════════════════════════════════════════════════════════════════════
     const stars = (() => {
@@ -413,7 +529,7 @@
 
         for (const [pos, ph] of [[lPos, _phase], [rPos, _phase + 2.1]]) {
           const { x: cx, y: cy } = pos;
-          const pulse = flicker(ph);
+          const pulse = flicker(ph) * flickerMul;
 
           // Amber radial halo centered on the window
           const glowR = ww * 2.6;
@@ -457,6 +573,7 @@
     function drawEffects(dt, t) {
       fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
       stars.draw(fxCtx, t);
+      shootingStar.draw(fxCtx, performance.now());
       windowGlow.draw(fxCtx, t);
       smoke.update(dt, t);
       smoke.draw(fxCtx);
@@ -474,6 +591,29 @@
       t   += dt;
 
       const step = dt / 16.667;
+
+      // Event timer: blizzard surge
+      if (blizzardTimer > 0) {
+        blizzardTimer -= dt;
+        if (blizzardTimer <= 0) {
+          blizzardTimer = 0;
+          weatherPaused = false;
+          targetSnow    = 0.7;
+          targetWindStr = 0;
+          targetWindX   = 0;
+        }
+      }
+
+      // Event timer: cabin flicker — random rapid on/off each frame
+      if (flickerTimer > 0) {
+        flickerTimer -= dt;
+        flickerMul = Math.random() < 0.22 ? 0.04 + Math.random() * 0.08
+                                           : 0.70 + Math.random() * 0.30;
+        if (flickerTimer <= 0) {
+          flickerTimer = 0;
+          flickerMul   = 1;
+        }
+      }
 
       const snowLerp = 0.008 * step;
       const windLerp = 0.005 * step;
