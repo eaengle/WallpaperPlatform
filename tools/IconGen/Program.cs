@@ -23,70 +23,62 @@ static byte[] RenderPng(int size)
 
     float s = size;
 
-    // Sky gradient: deep navy top → slightly lighter bottom
-    using (var bg = new LinearGradientBrush(
-        new Rectangle(0, 0, size, size),
-        Color.FromArgb(255,  6, 10, 26),
-        Color.FromArgb(255, 14, 28, 58),
-        LinearGradientMode.Vertical))
-        g.FillRectangle(bg, 0, 0, size, size);
+    // Background — dark rounded rect
+    float bgR = size >= 48 ? s * 0.16f : size >= 32 ? s * 0.12f : 0f;
+    using (var bgBrush = new SolidBrush(Color.FromArgb(255, 16, 16, 22)))
+        FillRoundedRect(g, bgBrush, 0, 0, s, s, bgR);
 
-    // Subtle aurora wash (32+ only)
-    if (size >= 32)
-    {
-        int ah = (int)(s * 0.55f);
-        using var aur = new LinearGradientBrush(
-            new Rectangle(0, 0, size, ah),
-            Color.FromArgb(40, 20, 190, 120),
-            Color.FromArgb( 0, 20, 190, 120),
-            LinearGradientMode.Vertical);
-        g.FillRectangle(aur, 0, 0, size, ah);
-    }
+    // Grid layout
+    float pad      = s * 0.09f;
+    float gap      = size >= 32 ? s * 0.05f : s * 0.06f;
+    float tileSize = (s - 2 * pad - gap) / 2f;
+    float tileR    = size >= 48 ? tileSize * 0.20f : size >= 32 ? tileSize * 0.14f : 0f;
 
-    // Mountain silhouette — left peak taller, right peak shorter
-    float lx = s * 0.28f, ly = s * 0.36f;
-    float rx = s * 0.67f, ry = s * 0.48f;
-    PointF[] mtn =
+    (float x, float y)[] positions =
     [
-        new(0,         s),
-        new(0,         s * 0.82f),
-        new(lx,        ly),
-        new(s * 0.46f, s * 0.64f),
-        new(rx,        ry),
-        new(s,         s * 0.76f),
-        new(s,         s),
+        (pad,               pad),
+        (pad + tileSize + gap, pad),
+        (pad,               pad + tileSize + gap),
+        (pad + tileSize + gap, pad + tileSize + gap),
     ];
-    using (var mb = new SolidBrush(Color.FromArgb(255, 20, 34, 60)))
-        g.FillPolygon(mb, mtn);
 
-    // Snow caps
-    using (var snow = new SolidBrush(Color.FromArgb(230, 228, 238, 255)))
-    {
-        foreach (var (px, py, rPct) in new[] { (lx, ly, 0.10f), (rx, ry, 0.075f) })
-        {
-            float cr = s * rPct;
-            g.FillPolygon(snow, new PointF[]
-            {
-                new(px,       py),
-                new(px - cr,  py + cr * 1.8f),
-                new(px + cr,  py + cr * 1.8f),
-            });
-        }
-    }
+    // sunset/amber · night/blue · forest/teal · space/violet
+    (Color top, Color bot)[] tileColors =
+    [
+        (Color.FromArgb(255, 225, 100, 28), Color.FromArgb(255, 155, 48, 12)),
+        (Color.FromArgb(255,  28,  80, 170), Color.FromArgb(255,  10,  38,  95)),
+        (Color.FromArgb(255,  22, 135,  78), Color.FromArgb(255,   8,  72,  42)),
+        (Color.FromArgb(255,  90,  22, 158), Color.FromArgb(255,  42,   8,  95)),
+    ];
 
-    // Stars — (normX, normY, normRadius)
-    using (var star = new SolidBrush(Color.FromArgb(210, 255, 255, 245)))
+    for (int i = 0; i < 4; i++)
     {
-        foreach (var (nx, ny, nr) in new[] { (0.74f, 0.11f, 0.052f), (0.18f, 0.17f, 0.038f), (0.50f, 0.06f, 0.032f) })
-        {
-            float sx = s * nx, sy = s * ny, sr = MathF.Max(0.8f, s * nr);
-            g.FillEllipse(star, sx - sr, sy - sr, sr * 2, sr * 2);
-        }
+        var (tx, ty) = positions[i];
+        var rect = new RectangleF(tx, ty, tileSize, tileSize);
+        using var grad = new LinearGradientBrush(rect, tileColors[i].top, tileColors[i].bot, LinearGradientMode.Vertical);
+        FillRoundedRect(g, grad, tx, ty, tileSize, tileSize, tileR);
     }
 
     using var ms = new MemoryStream();
     bmp.Save(ms, ImageFormat.Png);
     return ms.ToArray();
+}
+
+static void FillRoundedRect(Graphics g, Brush brush, float x, float y, float w, float h, float r)
+{
+    if (r <= 0)
+    {
+        g.FillRectangle(brush, x, y, w, h);
+        return;
+    }
+    using var path = new GraphicsPath();
+    float d = r * 2;
+    path.AddArc(x,         y,         d, d, 180, 90);
+    path.AddArc(x + w - d, y,         d, d, 270, 90);
+    path.AddArc(x + w - d, y + h - d, d, d,   0, 90);
+    path.AddArc(x,         y + h - d, d, d,  90, 90);
+    path.CloseFigure();
+    g.FillPath(brush, path);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
