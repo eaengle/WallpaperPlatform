@@ -2,7 +2,7 @@ using System.Text.Json.Serialization;
 
 namespace WallpaperPlatform;
 
-internal sealed class WallpaperManifest
+public sealed class WallpaperManifest
 {
     [JsonPropertyName("name")]        public string             Name        { get; init; } = "";
     [JsonPropertyName("version")]     public string             Version     { get; init; } = "";
@@ -11,7 +11,7 @@ internal sealed class WallpaperManifest
     [JsonPropertyName("events")]      public WallpaperEventDef[] Events     { get; init; } = [];
 }
 
-internal sealed class WallpaperEventDef
+public sealed class WallpaperEventDef
 {
     [JsonPropertyName("name")]       public string Name       { get; init; } = "";
     [JsonPropertyName("label")]      public string Label      { get; init; } = "";
