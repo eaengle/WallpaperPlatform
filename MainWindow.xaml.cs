@@ -7,6 +7,8 @@ namespace WallpaperPlatform;
 
 public partial class MainWindow : Window
 {
+    private WeatherBridge? _weather;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -18,14 +20,14 @@ public partial class MainWindow : Window
         Height = SystemParameters.PrimaryScreenHeight;
 
         Loaded += OnLoaded;
+        Closed += (_, _) => _weather?.Dispose();
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         var hwnd = new WindowInteropHelper(this).Handle;
 
-        // Pass physical pixel dimensions for Win32 SetWindowPos
-        var screen = System.Windows.Forms.Screen.PrimaryScreen!;
+        var screen   = System.Windows.Forms.Screen.PrimaryScreen!;
         bool attached = DesktopHelper.AttachToDesktop(hwnd, screen.Bounds.Width, screen.Bounds.Height);
 
         if (!attached)
@@ -35,7 +37,7 @@ public partial class MainWindow : Window
                 "WallpaperPlatform", MessageBoxButton.OK, MessageBoxImage.Warning);
 
         await InitWebViewAsync();
-        LoadWallpaper("default");
+        LoadWallpaper("cabin-snow");
     }
 
     private async Task InitWebViewAsync()
@@ -48,7 +50,21 @@ public partial class MainWindow : Window
         await WebView.EnsureCoreWebView2Async(env);
 
         WebView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
-        WebView.CoreWebView2.Settings.AreDevToolsEnabled = false;
+        WebView.CoreWebView2.Settings.AreDevToolsEnabled            = false;
+
+        // Start weather bridge once the wallpaper page has loaded.
+        // Re-fires on each LoadWallpaper call so the bridge stays aligned with
+        // whichever scene is active.
+        WebView.CoreWebView2.NavigationCompleted += OnNavigationCompleted;
+    }
+
+    private void OnNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
+    {
+        if (!e.IsSuccess) return;
+
+        _weather?.Dispose();
+        _weather = new WeatherBridge(WebView);
+        _weather.Start();
     }
 
     public void LoadWallpaper(string name)

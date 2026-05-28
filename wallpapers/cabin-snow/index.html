@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #050a14; }
+    #bg {
+      position: fixed;
+      inset: 0;
+      background: url('cabin.png') center / cover no-repeat;
+    }
+    #snow-far, #snow-near {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+    }
+    #snow-near {
+      filter: blur(2.5px);
+    }
+  </style>
+</head>
+<body>
+  <div id="bg"></div>
+  <canvas id="snow-far"></canvas>
+  <canvas id="snow-near"></canvas>
+  <script>
+    const farCanvas  = document.getElementById('snow-far');
+    const nearCanvas = document.getElementById('snow-near');
+    const farCtx     = farCanvas.getContext('2d');
+    const nearCtx    = nearCanvas.getContext('2d');
+
+    function resize() {
+      farCanvas.width  = nearCanvas.width  = window.innerWidth;
+      farCanvas.height = nearCanvas.height = window.innerHeight;
+    }
+    resize();
+    window.addEventListener('resize', () => { resize(); initFlakes(); });
+
+    function rnd(min, max) { return min + Math.random() * (max - min); }
+
+    // ── Weather state – smoothly lerped each frame ──────────────────────────
+    // Defaults provide a nice gentle snowfall before the first API response.
+    let targetSnow    = 0.7;   // 0 = invisible, 1 = heavy
+    let targetWindX   = 0;     // real-world wind direction push (-1 to 1)
+    let targetWindStr = 0;     // real-world wind strength (0-1)
+    let curSnow       = 0.7;
+    let curWindX      = 0;
+    let curWindStr    = 0;
+
+    window.chrome?.webview?.addEventListener('message', e => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.type !== 'weather') return;
+        targetSnow    = msg.snow;
+        targetWindX   = msg.windX;
+        targetWindStr = msg.wind;
+      } catch {}
+    });
+
+    // ── Far layer: many small crisp flakes ─────────────────────────────────
+    const FAR_COUNT = 300;
+
+    function makeFarFlake() {
+      return {
+        x:       Math.random() * farCanvas.width,
+        y:       Math.random() * farCanvas.height,
+        r:       rnd(0.5, 1.9),
+        vy:      rnd(0.55, 1.5),
+        phase:   Math.random() * Math.PI * 2,
+        freq:    rnd(0.35, 0.85),
+        amp:     rnd(0.25, 1.1),
+        opacity: rnd(0.35, 0.80),
+        sparkle: 0,
+      };
+    }
+
+    // ── Near layer: fewer large bokeh flakes (canvas has CSS blur) ──────────
+    const NEAR_COUNT = 50;
+
+    function makeNearFlake() {
+      return {
+        x:       Math.random() * nearCanvas.width,
+        y:       Math.random() * nearCanvas.height,
+        r:       rnd(3.5, 10),
+        vy:      rnd(0.12, 0.42),
+        phase:   Math.random() * Math.PI * 2,
+        freq:    rnd(0.18, 0.48),
+        amp:     rnd(1.5, 4.5),
+        opacity: rnd(0.22, 0.50),
+      };
+    }
+
+    let farFlakes = [], nearFlakes = [];
+
+    function initFlakes() {
+      farFlakes  = Array.from({ length: FAR_COUNT  }, makeFarFlake);
+      nearFlakes = Array.from({ length: NEAR_COUNT }, makeNearFlake);
+    }
+    initFlakes();
+
+    // ── Ambient wind: two overlapping sines for organic feel ────────────────
+    function ambientWind(t) {
+      return Math.sin(t * 0.00023) * 0.30 + Math.sin(t * 0.00053) * 0.18;
+    }
+
+    let t    = 0;
+    let last = performance.now();
+
+    function frame(now) {
+      const dt   = Math.min(now - last, 50);
+      last = now;
+      t   += dt;
+
+      const step = dt / 16.667;
+
+      // Lerp weather values toward targets (slow = gentle transitions)
+      const snowLerp = 0.008 * step;
+      const windLerp = 0.005 * step;
+      curSnow   += (targetSnow    - curSnow)   * snowLerp;
+      curWindX  += (targetWindX   - curWindX)  * windLerp;
+      curWindStr += (targetWindStr - curWindStr) * windLerp;
+
+      // Total wind = ambient organic sway + real-world directional push
+      const w = ambientWind(t) + curWindX * curWindStr * 4.0;
+
+      const cw = farCanvas.width;
+      const ch = farCanvas.height;
+
+      // ── Far flakes ────────────────────────────────────────────────────────
+      farCtx.clearRect(0, 0, cw, ch);
+
+      for (const f of farFlakes) {
+        const sway = Math.sin(t * 0.001 * f.freq + f.phase) * f.amp;
+        // Heavier snow falls faster
+        const speedScale = 0.6 + 0.4 * curSnow;
+        f.x += (w + sway * 0.06) * step;
+        f.y += f.vy * speedScale * step;
+
+        if (f.y >  ch + 4) { f.y = -4;      f.x = Math.random() * cw; }
+        if (f.x >  cw + 4) { f.x = -4; }
+        if (f.x < -4)      { f.x =  cw + 4; }
+
+        // Sparkle probability rises with snow intensity
+        if (f.sparkle <= 0 && Math.random() < 0.0003 * curSnow * step) {
+          f.sparkle = 1.0;
+        }
+
+        const drawOpacity = f.opacity * curSnow;
+        farCtx.beginPath();
+        farCtx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
+        farCtx.fillStyle = `rgba(215, 232, 255, ${drawOpacity})`;
+        farCtx.fill();
+
+        if (f.sparkle > 0) {
+          const sz  = f.r * 4 * f.sparkle;
+          const sOp = f.sparkle * 0.7 * curSnow;
+          farCtx.strokeStyle = `rgba(230, 245, 255, ${sOp})`;
+          farCtx.lineWidth   = 0.7;
+          farCtx.beginPath();
+          farCtx.moveTo(f.x - sz, f.y);
+          farCtx.lineTo(f.x + sz, f.y);
+          farCtx.moveTo(f.x, f.y - sz);
+          farCtx.lineTo(f.x, f.y + sz);
+          farCtx.stroke();
+          f.sparkle -= step * 0.04;
+        }
+      }
+
+      // ── Near (bokeh) flakes ───────────────────────────────────────────────
+      nearCtx.clearRect(0, 0, cw, ch);
+
+      for (const f of nearFlakes) {
+        const sway      = Math.sin(t * 0.001 * f.freq + f.phase) * f.amp;
+        const speedScale = 0.6 + 0.4 * curSnow;
+        f.x += (w * 1.15 + sway * 0.07) * step;
+        f.y += f.vy * speedScale * step;
+
+        if (f.y >  ch + 20) { f.y = -20;     f.x = Math.random() * cw; }
+        if (f.x >  cw + 20) { f.x = -20; }
+        if (f.x < -20)      { f.x =  cw + 20; }
+
+        const drawOpacity = f.opacity * curSnow;
+        const g = nearCtx.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.r);
+        g.addColorStop(0,    `rgba(255, 255, 255, ${drawOpacity})`);
+        g.addColorStop(0.45, `rgba(200, 225, 255, ${drawOpacity * 0.55})`);
+        g.addColorStop(1,    'rgba(180, 210, 255, 0)');
+
+        nearCtx.beginPath();
+        nearCtx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
+        nearCtx.fillStyle = g;
+        nearCtx.fill();
+      }
+
+      requestAnimationFrame(frame);
+    }
+
+    requestAnimationFrame(frame);
+  </script>
+</body>
+</html>

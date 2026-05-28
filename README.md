@@ -13,6 +13,7 @@ Wallpapers are self-contained HTML/JS/WebGL packages — the same web skills you
 - Wallpapers are plain **HTML + JavaScript** — use Canvas, WebGL, Three.js, anything
 - **System tray** icon for control (no taskbar clutter)
 - Wallpaper packages defined by a simple `manifest.json`
+- **Event bridge** — C# posts `postMessage` events to wallpapers for real-time scene control
 
 ---
 
@@ -91,8 +92,10 @@ WallpaperPlatform/
 ├── MainWindow.xaml / .cs           — full-screen WebView2 host, DPI-aware sizing
 ├── DesktopHelper.cs                — Win32 P/Invoke: WorkerW attachment
 ├── SystemTrayHelper.cs             — system tray icon and menu
+├── WeatherBridge.cs                — periodic event bridge; posts snow/wind data to active wallpaper
 └── wallpapers/
-    └── default/                    — built-in starfield wallpaper
+    ├── default/                    — built-in starfield wallpaper
+    └── cabin-snow/                 — aurora cabin scene with layered parallax snowfall
 ```
 
 ### Windows WorkerW Notes
@@ -106,9 +109,33 @@ Both are handled automatically. A diagnostic file is written to `%TEMP%\Wallpape
 
 ---
 
+## Event Bridge
+
+Wallpapers receive live data from C# via `window.chrome.webview` message events. The active bridge posts a JSON payload on load and every 10 seconds:
+
+```json
+{ "type": "weather", "snow": 1.4, "wind": 0.8, "windX": -0.6 }
+```
+
+Listen in your wallpaper:
+
+```javascript
+window.chrome?.webview?.addEventListener('message', e => {
+  const msg = JSON.parse(e.data);
+  if (msg.type === 'weather') {
+    // msg.snow  — intensity 0.3–3.0 (drives opacity + fall speed)
+    // msg.wind  — strength 0.0–1.5
+    // msg.windX — direction -1.0 (left) to 1.0 (right)
+  }
+});
+```
+
+Lerp toward received values each frame for smooth transitions. See `wallpapers/cabin-snow/index.html` for a full example.
+
+---
+
 ## Roadmap
 
-- [ ] Event bridge — C# → JS `postMessage` for time-of-day, system, and custom triggers  
 - [ ] Wallpaper picker UI  
 - [ ] Windows startup registration  
 - [ ] Multi-monitor support  
