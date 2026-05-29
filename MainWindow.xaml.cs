@@ -96,7 +96,8 @@ public partial class MainWindow : Window
 
         CurrentWallpaper       = name;
         CurrentWallpaperEvents = LoadManifestEvents(dir);
-        WebView.CoreWebView2.Navigate("file:///" + path.Replace('\\', '/'));
+        var cb = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        WebView.CoreWebView2.Navigate("file:///" + path.Replace('\\', '/') + "?v=" + cb);
     }
 
     private static WallpaperEventDef[] LoadManifestEvents(string wallpaperDir)

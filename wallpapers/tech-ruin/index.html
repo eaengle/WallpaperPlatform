@@ -100,7 +100,7 @@
       fxCanvas.height = dbgCanvas.height = H;
     }
     resize();
-    window.addEventListener('resize', () => { resize(); spores.init(); fireflies.init(); redrawDebugPins(); });
+    window.addEventListener('resize', () => { resize(); spores.init(); fireflies.init(); rainDrips.initAmb(); redrawDebugPins(); });
 
     function rnd(a, b)        { return a + Math.random() * (b - a); }
     function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
@@ -377,7 +377,7 @@
     //  Spores / dust
     // ══════════════════════════════════════════════════════════════════════════
     const spores = (() => {
-      const COUNT = 80;
+      const COUNT = 88;
       let pts = [];
 
       function make(startY) {
@@ -385,8 +385,8 @@
         return {
           x: rnd(0, W), y: startY ?? rnd(0, H),
           vy: rnd(-0.20, -0.56), vx: rnd(-0.06, 0.06),
-          r: rnd(0.8, 2.5), phase: rnd(0, TAU),
-          freq: rnd(0.00090, 0.00265), op: rnd(0.12, 0.42),
+          r: rnd(0.6, 1.9), phase: rnd(0, TAU),
+          freq: rnd(0.00090, 0.00265), op: rnd(0.08, 0.27),
           warm: Math.random() < 0.72,
         };
       }
@@ -415,12 +415,12 @@
           const twinkle = 0.55 + 0.30 * Math.sin(t * p.freq * 3.2 + p.phase)
                                + 0.15 * Math.sin(t * p.freq * 7.8 + p.phase * 1.7);
           const alpha = p.op * twinkle;
-          if (alpha < 0.015) continue;
+          if (alpha < 0.018) continue;
           const [r, g, b] = p.warm ? [255, 230, 150] : [190, 255, 168];
-          const gR  = p.r * 3.8;
+          const gR  = p.r * 3.1;
           const grd = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, gR);
-          grd.addColorStop(0,   `rgba(${r},${g},${b},${Math.min(0.999, alpha * 1.9).toFixed(3)})`);
-          grd.addColorStop(0.5, `rgba(${r},${g},${b},${alpha.toFixed(3)})`);
+          grd.addColorStop(0,   `rgba(${r},${g},${b},${Math.min(0.999, alpha * 1.55).toFixed(3)})`);
+          grd.addColorStop(0.5, `rgba(${r},${g},${b},${(alpha * 0.82).toFixed(3)})`);
           grd.addColorStop(1,   `rgba(${r},${g},${b},0)`);
           ctx.fillStyle = grd;
           ctx.beginPath();
@@ -438,7 +438,7 @@
     //  Fireflies
     // ══════════════════════════════════════════════════════════════════════════
     const fireflies = (() => {
-      const AMB_COUNT = 11, SURGE_COUNT = 58, SURGE_DUR = 18000, SURGE_FADE = 2800;
+      const AMB_COUNT = 0, SURGE_COUNT = 42, SURGE_DUR = 20000, SURGE_FADE = 3200;
       let ambient = [], surge = [], surgeT0 = -Infinity;
 
       function makeFF(nyLo, nyHi) {
@@ -792,67 +792,247 @@
     })();
 
     // ══════════════════════════════════════════════════════════════════════════
-    //  Rain Drips — droplets falling from server panels and foliage.
+    //  Rain Drips — ambient light drizzle (intensity drifts between none and
+    //  light); heavy downpour triggered as an event.
     // ══════════════════════════════════════════════════════════════════════════
     const rainDrips = (() => {
-      const DUR = 9000, COUNT = 38;
-      let t0 = -Infinity, drips = [];
+      // Ambient — a fine rain sheet plus foreground drips/splashes.
+      const AMB_COUNT = 54, AMB_SHEET_COUNT = 260;
+      const AMB_PH1 = rnd(0, TAU), AMB_PH2 = rnd(0, TAU);
+      let ambPts = [], ambSheet = [];
+
+      function makeAmbSheet(scattered) {
+        const W = window.innerWidth, H = window.innerHeight;
+        return {
+          x: rnd(-W * 0.18, W * 1.08),
+          y: scattered ? rnd(-H * 0.08, H * 1.08) : rnd(-H * 0.22, 0),
+          vx: rnd(-1.7, -0.45),
+          vy: rnd(8.5, 15.5),
+          len: rnd(22, 44),
+          a: rnd(0.45, 1.0),
+        };
+      }
+
+      function makeAmbDrip(scattered) {
+        const W = window.innerWidth, H = window.innerHeight;
+        const floorY = H * rnd(0.72, 0.90);
+        return {
+          x: rnd(W * 0.03, W * 0.97),
+          y: scattered ? rnd(0, floorY) : rnd(-H * 0.10, 0),
+          vy: rnd(4.0, 7.2), len: rnd(12, 23), floorY,
+          splashT: -Infinity, splashed: false,
+        };
+      }
+
+      function initAmb() {
+        ambPts = Array.from({ length: AMB_COUNT }, () => makeAmbDrip(true));
+        ambSheet = Array.from({ length: AMB_SHEET_COUNT }, () => makeAmbSheet(true));
+      }
+
+      function ambIntensity(now) {
+        const raw = Math.sin(now * 0.000095 + AMB_PH1) * Math.sin(now * 0.000143 + AMB_PH2);
+        return clamp(0.42 + Math.max(0, raw) * 0.58, 0, 1);
+      }
+
+      // Heavy rain event
+      const HEAVY_DUR = 6500, HEAVY_COUNT = 1500, HEAVY_MIST_COUNT = 14, HEAVY_SPLASH_COUNT = 90, HEAVY_FADE = 1400;
+      let heavyT0 = -Infinity, heavyPts = [], heavyMist = [], heavySplashes = [];
+
+      function makeHeavyStreak(scattered) {
+        const W = window.innerWidth, H = window.innerHeight;
+        return {
+          x: rnd(-W * 0.16, W * 1.08),
+          y: scattered ? rnd(-H * 0.10, H * 1.05) : rnd(-H * 0.18, 0),
+          vx: rnd(-1.9, -0.55),
+          vy: rnd(16, 31),
+          len: rnd(18, 42),
+          w: rnd(0.65, 1.35),
+          a: rnd(0.46, 1.0),
+        };
+      }
+
+      function makeHeavyMist(i) {
+        const W = window.innerWidth, H = window.innerHeight;
+        return {
+          x: rnd(-W * 0.65, W * 1.10),
+          y: rnd(-H * 0.08, H * 1.05),
+          rx: W * rnd(0.22, 0.52),
+          ry: H * rnd(0.12, 0.32),
+          vx: rnd(0.45, 1.65),
+          vy: rnd(-0.18, 0.18),
+          rot: rnd(-0.28, 0.18),
+          phase: i * 1.17 + rnd(0, TAU),
+          a: rnd(0.14, 0.38),
+        };
+      }
 
       function trigger() {
-        t0 = performance.now();
+        heavyT0 = performance.now();
         const W = window.innerWidth, H = window.innerHeight;
-        drips = Array.from({ length: COUNT }, () => ({
-          x:       rnd(W * 0.06, W * 0.94),
-          y:       rnd(H * 0.08, H * 0.46),
-          vy:      rnd(2.8, 5.8),
-          len:     rnd(6, 15),
-          delay:   rnd(0, 6500),
-          active:  false, done: false,
-          splashT: -Infinity,
-          floorY:  H * rnd(0.80, 0.90),
+        heavyPts = Array.from({ length: HEAVY_COUNT }, () => makeHeavyStreak(true));
+        heavyMist = Array.from({ length: HEAVY_MIST_COUNT }, (_, i) => makeHeavyMist(i));
+        heavySplashes = Array.from({ length: HEAVY_SPLASH_COUNT }, () => ({
+          x: rnd(W * 0.02, W * 0.98),
+          floorY: H * rnd(0.73, 0.96),
+          splashT: heavyT0 + rnd(-420, 900),
+          nextIn: rnd(130, 520),
+          scale: rnd(0.55, 1.45),
         }));
       }
 
       function update(dt, now) {
-        const age = now - t0;
-        if (age < 0 || age >= DUR) return;
         const step = dt / 16.667;
-        for (const d of drips) {
-          if (age < d.delay) continue;
-          if (d.done) continue;
-          d.active = true;
+        const W = window.innerWidth, H = window.innerHeight;
+
+        for (const d of ambSheet) {
+          d.x += d.vx * step;
           d.y += d.vy * step;
-          if (d.y > d.floorY) { d.splashT = now; d.done = true; }
+          if (d.y > H + d.len || d.x < -W * 0.25) Object.assign(d, makeAmbSheet(false));
+        }
+
+        for (const d of ambPts) {
+          if (d.splashed) {
+            if (now - d.splashT > 450) Object.assign(d, makeAmbDrip(false));
+            continue;
+          }
+          d.y += d.vy * step;
+          if (d.y > d.floorY) { d.splashed = true; d.splashT = now; }
+        }
+
+        const heavyAge = now - heavyT0;
+        if (heavyAge >= 0 && heavyAge < HEAVY_DUR + HEAVY_FADE) {
+          for (const d of heavyPts) {
+            d.x += d.vx * step;
+            d.y += d.vy * step;
+            if (heavyAge < HEAVY_DUR && (d.y > H + d.len || d.x < -W * 0.28)) Object.assign(d, makeHeavyStreak(false));
+          }
+
+          if (heavyAge < HEAVY_DUR) {
+            for (const b of heavyMist) {
+              b.x += b.vx * step;
+              b.y += b.vy * step;
+              if (b.x > W + b.rx * 0.75) Object.assign(b, makeHeavyMist(0), { x: -b.rx * 1.25 });
+            }
+
+            for (const s of heavySplashes) {
+              if (now - s.splashT > s.nextIn) {
+                s.x = rnd(W * 0.02, W * 0.98);
+                s.floorY = H * rnd(0.73, 0.96);
+                s.splashT = now;
+                s.nextIn = rnd(130, 520);
+                s.scale = rnd(0.55, 1.45);
+              }
+            }
+          }
         }
       }
 
       function draw(ctx, now) {
-        const age = now - t0;
-        if (age < 0 || age >= DUR) return;
-        const env = Math.min(age / 500, 1) * Math.min(1, (DUR - age) / 800);
-        if (env < 0.01) return;
-
         ctx.save();
         ctx.globalCompositeOperation = 'screen';
 
-        for (const d of drips) {
-          if (!d.active) continue;
-          const alpha = env * 0.44;
-          if (!d.done) {
-            ctx.strokeStyle = `rgba(160,205,225,${alpha.toFixed(3)})`;
-            ctx.lineWidth = 1.2;
+        // Ambient drizzle
+        const ai = ambIntensity(now);
+        if (ai > 0.01) {
+          const baseAlpha = ai * 0.72;
+          ctx.globalCompositeOperation = 'source-over';
+          ctx.fillStyle = `rgba(64,92,108,${(ai * 0.085).toFixed(3)})`;
+          ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+
+          ctx.globalCompositeOperation = 'screen';
+          for (const d of ambSheet) {
+            const alpha = baseAlpha * d.a * 0.58;
+            ctx.strokeStyle = `rgba(170,215,232,${alpha.toFixed(3)})`;
+            ctx.lineWidth = 0.9;
             ctx.beginPath();
             ctx.moveTo(d.x, d.y);
-            ctx.lineTo(d.x, d.y - d.len);
+            ctx.lineTo(d.x - d.vx * d.len * 0.34, d.y - d.len);
             ctx.stroke();
-          } else {
-            const sp = (now - d.splashT) / 520;
-            if (sp < 1) {
-              ctx.strokeStyle = `rgba(160,205,225,${(alpha * (1 - sp)).toFixed(3)})`;
-              ctx.lineWidth = 0.8;
+          }
+
+          for (const d of ambPts) {
+            if (d.splashed) {
+              const sp = (now - d.splashT) / 450;
+              if (sp < 1) {
+                ctx.strokeStyle = `rgba(160,205,225,${(baseAlpha * (1 - sp) * 0.65).toFixed(3)})`;
+                ctx.lineWidth = 0.7;
+                ctx.beginPath();
+                ctx.ellipse(d.x, d.floorY, sp * 6, sp * 2.0, 0, 0, TAU);
+                ctx.stroke();
+              }
+              continue;
+            }
+            ctx.strokeStyle = `rgba(160,205,225,${baseAlpha.toFixed(3)})`;
+            ctx.lineWidth = 1.15;
+            ctx.beginPath();
+            ctx.moveTo(d.x, d.y); ctx.lineTo(d.x + d.len * 0.14, d.y - d.len);
+            ctx.stroke();
+          }
+        }
+
+        // Heavy rain event
+        const heavyAge = now - heavyT0;
+        if (heavyAge >= 0 && heavyAge < HEAVY_DUR + HEAVY_FADE) {
+          const env = Math.min(heavyAge / 750, 1) * Math.min(1, Math.max(0, (HEAVY_DUR - heavyAge) / HEAVY_FADE));
+          if (env > 0.01) {
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.fillStyle = `rgba(34,52,62,${(env * 0.46).toFixed(3)})`;
+            ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+
+            ctx.fillStyle = `rgba(168,184,182,${(env * 0.10).toFixed(3)})`;
+            ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+
+            for (const b of heavyMist) {
+              const wobbleX = Math.sin(now * 0.0011 + b.phase) * b.rx * 0.07;
+              const wobbleY = Math.cos(now * 0.0017 + b.phase * 0.7) * b.ry * 0.10;
+              const grd = ctx.createRadialGradient(
+                b.x + wobbleX, b.y + wobbleY, 0,
+                b.x + wobbleX, b.y + wobbleY, Math.max(b.rx, b.ry)
+              );
+              const a = env * b.a;
+              grd.addColorStop(0, `rgba(190,202,198,${(a * 0.30).toFixed(3)})`);
+              grd.addColorStop(0.38, `rgba(150,170,170,${(a * 0.18).toFixed(3)})`);
+              grd.addColorStop(0.72, `rgba(100,124,132,${(a * 0.09).toFixed(3)})`);
+              grd.addColorStop(1, 'rgba(110,130,136,0)');
+              ctx.fillStyle = grd;
+              ctx.save();
+              ctx.translate(b.x + wobbleX, b.y + wobbleY);
+              ctx.rotate(b.rot + Math.sin(now * 0.0007 + b.phase) * 0.05);
               ctx.beginPath();
-              ctx.ellipse(d.x, d.floorY, sp * 9, sp * 2.8, 0, 0, TAU);
+              ctx.ellipse(0, 0, b.rx, b.ry, 0, 0, TAU);
+              ctx.fill();
+              ctx.restore();
+            }
+
+            ctx.globalCompositeOperation = 'source-over';
+
+            for (const d of heavyPts) {
+              const alpha = env * d.a * 0.88;
+              if (alpha < 0.035) continue;
+              ctx.strokeStyle = `rgba(218,238,242,${alpha.toFixed(3)})`;
+              ctx.lineWidth = d.w;
+              ctx.beginPath();
+              ctx.moveTo(d.x, d.y);
+              ctx.lineTo(d.x - d.vx * d.len * 0.24, d.y - d.len);
               ctx.stroke();
+            }
+
+            for (const s of heavySplashes) {
+              const sp = (now - s.splashT) / 360;
+              if (sp < 0 || sp >= 1) continue;
+              const a = env * (1 - sp) * 0.48;
+              ctx.strokeStyle = `rgba(185,225,238,${a.toFixed(3)})`;
+              ctx.lineWidth = 1.0;
+              ctx.beginPath();
+              ctx.ellipse(s.x, s.floorY, sp * 20 * s.scale, sp * 4.6 * s.scale, 0, 0, TAU);
+              ctx.stroke();
+              if (sp < 0.45) {
+                ctx.strokeStyle = `rgba(225,242,248,${(a * 0.8).toFixed(3)})`;
+                ctx.beginPath();
+                ctx.moveTo(s.x - 5 * s.scale, s.floorY - sp * 8 * s.scale);
+                ctx.lineTo(s.x + 5 * s.scale, s.floorY - sp * 10 * s.scale);
+                ctx.stroke();
+              }
             }
           }
         }
@@ -860,7 +1040,8 @@
         ctx.restore();
       }
 
-      return { trigger, update, draw };
+      initAmb();
+      return { initAmb, trigger, update, draw };
     })();
 
     // ══════════════════════════════════════════════════════════════════════════
