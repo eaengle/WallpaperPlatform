@@ -4,8 +4,23 @@
   "description": "Jungle-reclaimed server farm glowing with amber and green tech light",
   "tier": "free",
   "events": [
-    { "name": "server_glitch",  "label": "Server Glitch",    "minSeconds": 20, "maxSeconds": 45 },
-    { "name": "firefly_surge",  "label": "Firefly Surge",    "minSeconds": 25, "maxSeconds": 50 },
-    { "name": "bird_fly",       "label": "Bird Flythrough",  "minSeconds": 30, "maxSeconds": 65 }
+    { "name": "server_glitch",   "label": "Server Glitch",       "minSeconds": 20, "maxSeconds": 45 },
+    { "name": "firefly_surge",   "label": "Firefly Surge",       "minSeconds": 25, "maxSeconds": 50 },
+    { "name": "bird_fly",        "label": "Bird Flythrough",     "minSeconds": 30, "maxSeconds": 65 },
+    { "name": "glow_surge",      "label": "Glow Surge",          "minSeconds": 22, "maxSeconds": 50 },
+    { "name": "cable_spark",     "label": "Cable Spark",         "minSeconds": 12, "maxSeconds": 28 },
+    { "name": "data_drift",      "label": "Data Drift",          "minSeconds": 20, "maxSeconds": 42 },
+    { "name": "leaf_gust",       "label": "Leaf Gust",           "minSeconds": 20, "maxSeconds": 45 },
+    { "name": "rain_drips",      "label": "Rain Drips",          "minSeconds": 30, "maxSeconds": 65 },
+    { "name": "monitor_static",  "label": "Monitor Static",      "minSeconds": 20, "maxSeconds": 42 },
+    { "name": "screen_message",  "label": "Screen Message",      "minSeconds": 25, "maxSeconds": 55 },
+    { "name": "scanner_sweep",   "label": "Scanner Sweep",       "minSeconds": 22, "maxSeconds": 48 },
+    { "name": "spore_cloud",     "label": "Spore Cloud",         "minSeconds": 25, "maxSeconds": 55 },
+    { "name": "eyes_appear",     "label": "Eyes in the Dark",    "minSeconds": 35, "maxSeconds": 75 },
+    { "name": "creature_scurry", "label": "Creature Scurry",     "minSeconds": 28, "maxSeconds": 58 },
+    { "name": "falling_leaf",    "label": "Falling Leaf",        "minSeconds": 18, "maxSeconds": 40 },
+    { "name": "sunbeam_shift",   "label": "Sunbeam Shift",       "minSeconds": 30, "maxSeconds": 65 },
+    { "name": "night_shift",     "label": "Night Shift",         "minSeconds": 120, "maxSeconds": 240 },
+    { "name": "power_arc",       "label": "Power Arc",           "minSeconds": 30, "maxSeconds": 68 }
   ]
 }
