@@ -11,7 +11,9 @@ Wallpapers are self-contained HTML/JS/WebGL packages — the same web skills you
 - Renders wallpapers **behind desktop icons** using the Windows `WorkerW` layer
 - Full **4K / multi-DPI** support
 - Wallpapers are plain **HTML + JavaScript** — use Canvas, WebGL, Three.js, anything
-- **System tray** control — switch scenes, trigger events manually, or exit cleanly
+- **Wait / Run mode** — starts lightweight (tray only, no GPU) and activates the wallpaper on demand
+- **System tray** control — switch scenes, trigger events, start/stop the wallpaper, or exit
+- **Start with Windows** — optional startup registry entry managed from the tray; launches in Wait mode so no GPU load hits at login
 - Wallpaper packages defined by a simple `manifest.json`
 - **Weather bridge** — live snow/wind data posted to the active wallpaper every 10 seconds
 - **Scene event bridge** — C# fires named events on random schedules; wallpapers react with visual effects
@@ -35,14 +37,24 @@ cd WallpaperPlatform
 dotnet run --project WallpaperPlatform
 ```
 
-Exit via the system tray icon (right-click → Exit).
+The app starts in **Wait mode** — a tray icon appears but no wallpaper is loaded yet. Right-click the tray icon and select **Start Wallpaper** to activate it. To exit completely, stop the wallpaper first (returning to Wait mode), then choose **Exit**.
 
 ---
 
 ## System Tray
 
-Right-clicking the tray icon shows:
+The tray menu changes depending on whether the wallpaper is active.
 
+**Wait mode** (no wallpaper running):
+```
+Start Wallpaper
+──────────────────
+☐ Start with Windows
+──────────────────
+Exit
+```
+
+**Run mode** (wallpaper active):
 ```
 Select Scene   ▶
     ✓ Cabin in Snow
@@ -55,12 +67,18 @@ Trigger Event  ▶
     Window Shadow
     Owl Swoop
 ──────────────────
-Exit
+Stop Wallpaper
+──────────────────
+☐ Start with Windows
 ```
+
+**Start Wallpaper / Stop Wallpaper** — activates or deactivates the wallpaper. Stopping returns to Wait mode; the app stays in the tray ready to restart without a full relaunch.
 
 **Select Scene** lists every wallpaper found in the `wallpapers/` directory. Display names come from each package's `manifest.json`. The active scene is ticked. Selecting an entry switches the wallpaper immediately with no restart required.
 
 **Trigger Event** fires any scene event immediately — useful for testing or for users who want to see an effect on demand. Events are otherwise fired automatically by the C# event bridge on random schedules.
+
+**Start with Windows** — when checked, registers the app in `HKCU\...\Run` so it launches on login in Wait mode. No wallpaper or GPU load at startup unless the user activates it. Unchecking removes the registry entry. The entry is also cleaned up automatically on uninstall.
 
 ---
 
@@ -133,18 +151,20 @@ A standard HTML page. It has access to the full screen dimensions via `window.in
 
 ```
 WallpaperPlatform/
-├── App.xaml / App.xaml.cs          — application entry point
+├── App.xaml / App.xaml.cs          — application entry point; Wait/Run mode state machine
 ├── MainWindow.xaml / .cs           — full-screen WebView2 host, DPI-aware sizing
 ├── DesktopHelper.cs                — Win32 P/Invoke: WorkerW attachment
-├── SystemTrayHelper.cs             — system tray icon and menu
+├── SystemTrayHelper.cs             — mode-aware tray icon and menus; startup registry
 ├── WeatherBridge.cs                — periodic weather data bridge (snow, wind)
 ├── WallpaperEventBridge.cs         — C#-scheduled scene event bridge
 ├── app.ico                         — application icon (regenerate via tools/IconGen)
+├── installer/
+│   └── WallpaperPlatform.iss       — Inno Setup installer script
 ├── tools/
 │   └── IconGen/                    — .NET console tool that generates app.ico
 └── wallpapers/
     ├── default/                    — built-in starfield wallpaper
-    └── cabin-snow/                 — aurora cabin scene with layered snowfall, chimney smoke,
+    └── cabin-snow/                 — cabin scene with layered snowfall, chimney smoke,
                                        flickering window glow, twinkling stars, window shadow, owl swoop, and rabbit hop events
 ```
 
@@ -276,13 +296,49 @@ Edit `tools/IconGen/Program.cs` to change the design, then rebuild the main proj
 
 ---
 
+## Building and Installing
+
+### Development (Debug)
+
+```bash
+dotnet run --project WallpaperPlatform
+```
+
+Runs directly from the build output — no install needed.
+
+### Deploy to install folder (Release)
+
+```bash
+dotnet build -c Release
+```
+
+A post-build target automatically copies the output to `C:\Program Files\WallpaperPlatform\`. Requires an **elevated terminal** (write access to Program Files). To redirect to a different path:
+
+```bash
+dotnet build -c Release -p:DeployInstallDir="C:\MyTestFolder\"
+```
+
+### Building the installer
+
+1. Install [Inno Setup](https://jrsoftware.org/isdl.php)
+2. Build the Release output: `dotnet build -c Release`
+3. Compile the installer:
+   ```bash
+   iscc installer\WallpaperPlatform.iss
+   ```
+   Output: `installer\WallpaperPlatform-Setup.exe`
+
+---
+
 ## Roadmap
 
-- [x] Scene switcher via system tray  
-- [ ] Windows startup registration  
-- [ ] Multi-monitor support  
-- [ ] License key validation for premium wallpaper packs
+- [x] Scene switcher via system tray
+- [x] Wait / Run mode — lightweight tray-only startup, activate wallpaper on demand
+- [x] Start with Windows — optional startup registry entry, launches in Wait mode
 - [x] Event definitions driven by `manifest.json` (per-wallpaper event schedules)
+- [x] Inno Setup installer with .NET 9 prerequisite check
+- [ ] Multi-monitor support
+- [ ] License key validation for premium wallpaper packs
 
 ---
 
