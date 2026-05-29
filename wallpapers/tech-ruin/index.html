@@ -72,7 +72,15 @@
       serverCenter:  [545, 460],   // center of server rack cluster — refine with ?debug
       serverRight:   [956, 445],   // right server module — pin 10
       monitorScreen: [910, 524],   // cracked monitor center — pins 1-4 avg; 39×30 paint-px
-      mushroomClump: [1109, 711],  // foreground mushroom cluster — pin 5
+      mushroomClumps: [             // all mushroom locations — measured 2026-05-29
+        [432, 609], [474, 656], [590, 650], [685, 554],
+        [567, 735], [623, 729], [618, 774], [644, 760],
+        [1090, 735], [1103, 724], [1126, 731], [1115, 705], [1102, 688],
+        [1515, 627], [1500, 660], [1471, 672], [1473, 691],
+        [1350, 817], [1349, 865], [1519, 799],
+        [277, 776],  [341, 828],  [321, 875],
+        [585, 855],
+      ],
       darkCavity:    [779, 619],   // dark hole in server rack — pins 6-9 avg
       waterfallTL:   [266, 187],   // pin 17 — top-left corner of waterfall
       waterfallTR:   [313, 199],   // pin 18 — top-right corner
@@ -1190,24 +1198,39 @@
     })();
 
     // ══════════════════════════════════════════════════════════════════════════
-    //  Spore Cloud — soft puff from foreground mushrooms.
-    //  Gated on ANCHORS.mushroomClump.
+    //  Spore Cloud — gentle puff from a puffball mushroom: tight column rises
+    //  a short distance, billows into a wispy smoky cloud, then slowly disperses.
+    //  Picks a random mushroom from ANCHORS.mushroomClumps each trigger.
     // ══════════════════════════════════════════════════════════════════════════
     const sporeCloud = (() => {
-      const DUR = 7000, COUNT = 68;
+      const DUR = 11000, COUNT = 80;
       let t0 = -Infinity, pts = [];
 
       function trigger() {
-        if (!ANCHORS.mushroomClump || !imgNaturalW) return;
+        const clumps = ANCHORS.mushroomClumps;
+        if (!clumps || !clumps.length || !imgNaturalW) return;
         t0 = performance.now();
-        const c = paintToCanvas(...ANCHORS.mushroomClump);
+        const pick = clumps[Math.floor(Math.random() * clumps.length)];
+        const c  = paintToCanvas(...pick);
+        const s  = coverScale().s;
+        const ox = c.x, oy = c.y;
+
         pts = Array.from({ length: COUNT }, () => {
-          const ang = rnd(0, TAU), spd = rnd(0.25, 1.6);
+          const spd = rnd(0.55, 1.65);
+          // Narrow upward cone — ±18° from vertical
+          const sa  = rnd(-0.32, 0.32);
           return {
-            x: c.x + rnd(-8, 8), y: c.y + rnd(-4, 4),
-            vx: Math.cos(ang) * spd * rnd(0.3, 1),
-            vy: Math.sin(ang) * spd - rnd(0.35, 1.0),
-            r: rnd(1.0, 3.2), delay: rnd(0, 380),
+            x: ox + rnd(-3, 3), y: oy,
+            vx: Math.sin(sa) * spd,
+            vy: -Math.cos(sa) * spd,
+            r: rnd(0.32, 0.82),
+            delay: rnd(0, 280),
+            // Cap height: low — 35–50 paint-px above origin
+            capY: oy - rnd(35, 50) * s,
+            drifting: false,
+            // Smoke diffusion velocity assigned at transition
+            dvx: rnd(-0.14, 0.14),
+            dvy: rnd(-0.06, 0.10),
           };
         });
       }
@@ -1218,15 +1241,36 @@
         const step = dt / 16.667;
         for (const p of pts) {
           if (age < p.delay) continue;
-          p.x  += p.vx * step; p.y += p.vy * step;
-          p.vx *= 0.993; p.vy += 0.007 * step;
+          if (!p.drifting) {
+            p.x  += p.vx * step;
+            p.y  += p.vy * step;
+            p.vx *= 0.990;
+            p.vy *= 0.988;   // decelerates as it rises
+            // Transition when cap height reached or nearly stopped
+            if (p.y <= p.capY || Math.abs(p.vy) < 0.06) {
+              p.drifting = true;
+              p.vx = p.dvx;
+              p.vy = p.dvy;
+            }
+          } else {
+            // Smoke diffusion — slow drift + tiny turbulent nudges
+            p.x  += p.vx * step;
+            p.y  += p.vy * step;
+            p.vx *= 0.997;
+            p.vy *= 0.997;
+            p.vx += rnd(-0.007, 0.007);
+            p.vy += rnd(-0.004, 0.005);
+            // Soft speed clamp keeps motion gentle
+            p.vx = Math.max(-0.18, Math.min(0.18, p.vx));
+            p.vy = Math.max(-0.14, Math.min(0.16, p.vy));
+          }
         }
       }
 
       function draw(ctx, now) {
         const age = now - t0;
         if (age < 0 || age >= DUR) return;
-        const env = Math.min(age / 550, 1) * Math.min(1, (DUR - age) / 2500);
+        const env = Math.min(age / 380, 1) * Math.min(1, (DUR - age) / 4200);
         if (env < 0.01) return;
 
         ctx.save();
@@ -1234,13 +1278,12 @@
 
         for (const p of pts) {
           if (age < p.delay) continue;
-          const alpha = 0.52 * Math.min(1, (DUR - age) / 3000) * env;
-          if (alpha < 0.01) continue;
-          const gR  = p.r * 3.5;
+          const alpha = 0.38 * env;
+          const gR  = p.r * 5.8;
           const grd = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, gR);
-          grd.addColorStop(0,   `rgba(225,218,182,${Math.min(0.999, alpha * 2).toFixed(3)})`);
-          grd.addColorStop(0.5, `rgba(205,198,158,${alpha.toFixed(3)})`);
-          grd.addColorStop(1,   'rgba(182,172,122,0)');
+          grd.addColorStop(0,   `rgba(228,220,185,${Math.min(0.999, alpha * 2.8).toFixed(3)})`);
+          grd.addColorStop(0.4, `rgba(210,202,162,${alpha.toFixed(3)})`);
+          grd.addColorStop(1,   'rgba(185,175,130,0)');
           ctx.fillStyle = grd;
           ctx.beginPath(); ctx.arc(p.x, p.y, gR, 0, TAU); ctx.fill();
         }

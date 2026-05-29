@@ -168,7 +168,7 @@ WallpaperPlatform/
     ├── cabin-snow/                 — cabin scene with layered snowfall, chimney smoke,
     │                                  flickering window glow, twinkling stars, window shadow, owl swoop, and rabbit hop events
     └── tech-ruin/                  — jungle-reclaimed server farm with god rays, floating spores,
-                                       fireflies, amber/green server glow, and bird flythrough events
+                                       fireflies, waterfall shimmer, server glow, fog patches, and 18 events
 ```
 
 ### Windows WorkerW Notes
@@ -225,9 +225,24 @@ The `data` field is optional and event-specific. Built-in events per scene:
 
 | Event | Effect |
 |---|---|
-| `server_glitch` | Server rack LEDs flicker erratically for ~3 seconds |
-| `firefly_surge` | Dozens of fireflies flood the scene and fade over 18 seconds |
+| `server_glitch` | Server rack LEDs flicker erratically |
+| `firefly_surge` | Dozens of extra fireflies flood the scene |
 | `bird_fly` | A bird silhouette crosses the sky through the canopy gap |
+| `glow_surge` | Server core brightens with a power pulse |
+| `cable_spark` | Blue-white sparks crackle along server cables |
+| `data_drift` | Cyan and amber data particles rise from the server rack |
+| `leaf_gust` | A gust sweeps jungle leaves across the lower screen |
+| `rain_drips` | Heavy tropical rain overlays the ambient drizzle |
+| `monitor_static` | The cracked monitor fills with grey static noise |
+| `screen_message` | A glitched status message appears on the monitor |
+| `scanner_sweep` | A horizontal scan line passes across the monitor |
+| `spore_cloud` | A puffball mushroom releases a wispy spore cloud that billows and disperses |
+| `eyes_appear` | Amber slit-pupil eyes reflect from a dark cavity in the server rack |
+| `creature_scurry` | A small creature dashes across the foreground |
+| `falling_leaf` | A single leaf tumbles and drifts down through the canopy |
+| `sunbeam_shift` | An extra god ray drifts slowly across the scene |
+| `night_shift` | The scene darkens as if a cloud passes over the canopy (32 s) |
+| `power_arc` | A lightning bolt arcs between server modules in three flashes |
 
 ### Listening in your wallpaper
 
