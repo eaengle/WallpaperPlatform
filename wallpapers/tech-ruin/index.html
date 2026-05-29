@@ -292,7 +292,7 @@
     //  Fireflies
     // ══════════════════════════════════════════════════════════════════════════
     const fireflies = (() => {
-      const AMB_COUNT = 18, SURGE_COUNT = 58, SURGE_DUR = 18000, SURGE_FADE = 2800;
+      const AMB_COUNT = 11, SURGE_COUNT = 58, SURGE_DUR = 18000, SURGE_FADE = 2800;
       let ambient = [], surge = [], surgeT0 = -Infinity;
 
       function makeFF(nyLo, nyHi) {
@@ -344,12 +344,12 @@
         for (const { list, fa } of sets) {
           for (const f of list) {
             const blink = Math.max(0, Math.sin(t * f.freq + f.ph));
-            const alpha = blink * blink * 0.88 * fa;
+            const alpha = blink * blink * 0.52 * fa;
             if (alpha < 0.018) continue;
             const [r, g, b] = f.warm ? [255, 228, 72] : [112, 255, 90];
-            const gR = f.r * (3.0 + blink * 3.2);
+            const gR = f.r * (1.2 + blink * 1.0);
             const grd = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, gR);
-            grd.addColorStop(0,    `rgba(${r},${g},${b},${Math.min(0.999, alpha * 2.6).toFixed(3)})`);
+            grd.addColorStop(0,    `rgba(${r},${g},${b},${Math.min(0.999, alpha * 1.8).toFixed(3)})`);
             grd.addColorStop(0.28, `rgba(${r},${g},${b},${alpha.toFixed(3)})`);
             grd.addColorStop(1,    `rgba(${r},${g},${b},0)`);
             ctx.fillStyle = grd;
