@@ -1,0 +1,1270 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #050510; }
+    #bg {
+      position: fixed; inset: 0; z-index: 0;
+      background: url('space_church_background.png') center / cover no-repeat;
+    }
+    #night-overlay {
+      position: fixed; inset: 0; z-index: 1;
+      background: #000; opacity: 0; pointer-events: none;
+    }
+    #effects, #dbg-canvas {
+      position: fixed; inset: 0; z-index: 2; pointer-events: none;
+    }
+    #dbg-canvas { z-index: 3; }
+    #dbg-overlay {
+      position: fixed; inset: 0; cursor: crosshair; z-index: 9000; display: none;
+    }
+    #dbg-panel {
+      position: fixed; top: 8px; left: 8px; z-index: 9999; display: none;
+      background: rgba(0,0,0,0.72); color: #8af; font: 12px/1.6 monospace;
+      padding: 8px 10px; border-radius: 4px; pointer-events: none;
+      max-width: 420px; white-space: pre;
+    }
+  </style>
+</head>
+<body>
+  <div id="bg"></div>
+  <div id="night-overlay"></div>
+  <canvas id="effects"></canvas>
+  <canvas id="dbg-canvas"></canvas>
+  <div id="dbg-overlay"></div>
+  <div id="dbg-panel"></div>
+
+  <script>
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Image-anchor system
+    // ══════════════════════════════════════════════════════════════════════════
+    let imgNaturalW = 0, imgNaturalH = 0;
+    const _probe = new Image();
+    _probe.onload = () => {
+      imgNaturalW = _probe.naturalWidth;
+      imgNaturalH = _probe.naturalHeight;
+      if (debugMode) updateDebugPanel(`Image: ${imgNaturalW}×${imgNaturalH}\nClick to capture paint coords.`);
+    };
+    _probe.src = 'space_church_background.png';
+
+    function coverScale() {
+      const W = window.innerWidth, H = window.innerHeight;
+      const s = Math.max(W / imgNaturalW, H / imgNaturalH);
+      return { s, ox: (W - imgNaturalW * s) / 2, oy: (H - imgNaturalH * s) / 2 };
+    }
+    function paintToCanvas(px, py) {
+      if (!imgNaturalW) return { x: px, y: py };
+      const { s, ox, oy } = coverScale();
+      return { x: px * s + ox, y: py * s + oy };
+    }
+    function canvasToPaint(sx, sy) {
+      if (!imgNaturalW) return { px: 0, py: 0 };
+      const { s, ox, oy } = coverScale();
+      return { px: Math.round((sx - ox) / s), py: Math.round((sy - oy) / s) };
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  ANCHORS — rough visual estimates. Refine all with ?debug.
+    // ══════════════════════════════════════════════════════════════════════════
+    const ANCHORS = {
+      starWindowCenter:  [834, 362],   // center of the rear cosmic portal
+      altarOrbCenter:    [834, 580],   // the central glowing blue orb
+      altarRingCenter:   [834, 580],   // ring apparatus center
+      altarBase:         [834, 752],   // altar base / floor below altar
+      leftPillarInner:   [424, 394],   // left inner crystal pillar center
+      rightPillarInner:  [1243, 396],  // right inner crystal pillar center
+      leftPillarOuter:   [575, 529],   // left outer wall pillar
+      rightPillarOuter:  [1091, 528],  // right outer wall pillar
+      conduitLTop:       [452, 149],   // left pillar top (conduit top)
+      conduitLBot:       [394, 742],   // left pillar bottom (conduit bottom)
+      conduitRTop:       [1224, 148],  // right pillar top
+      conduitRBot:       [1262, 749],  // right pillar bottom
+      leftLamp:          [510, 599],   // top of left foreground shrine lamp
+      rightLamp:         [1156, 605],  // top of right foreground shrine lamp
+      floorWalkY:        [694, 762],   // floor level (y used for ground)
+      floorChannelNear:  [630, 930],   // near end of center floor channel
+      floorChannelFar:   [789, 749],   // far end (near altar)
+      leftAlcove:        [279, 736],   // left wall alcove center
+      rightAlcove:       [1394, 741],  // right wall alcove center
+      sparkPointL:       [383, 397],   // left panel edge for sparks
+      sparkPointR:       [1296, 533],  // right panel edge for sparks
+      ventL:             [400, 841],   // left floor vent
+      ventR:             [1217, 840],  // right floor vent
+    };
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Canvas setup
+    // ══════════════════════════════════════════════════════════════════════════
+    const fxCanvas  = document.getElementById('effects');
+    const dbgCanvas = document.getElementById('dbg-canvas');
+    const fxCtx     = fxCanvas.getContext('2d');
+    const dbgCtx    = dbgCanvas.getContext('2d');
+
+    function resize() {
+      const W = window.innerWidth, H = window.innerHeight;
+      fxCanvas.width  = dbgCanvas.width  = W;
+      fxCanvas.height = dbgCanvas.height = H;
+    }
+    resize();
+    window.addEventListener('resize', () => {
+      resize();
+      dustMotes.init();
+      redrawDebugPins();
+    });
+
+    function rnd(a, b)        { return a + Math.random() * (b - a); }
+    function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+    const TAU = Math.PI * 2;
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Event dispatch
+    // ══════════════════════════════════════════════════════════════════════════
+    function handleSceneEvent(name) {
+      switch (name) {
+        case 'light_shaft':     lightShaft.trigger();        break;
+        case 'altar_surge':     altarSurge.trigger();        break;
+        case 'hologram_alcove': hologramAlcove.trigger();    break;
+        case 'spider_patrol':   spiderPatrol.trigger();      break;
+        case 'orb_hover':       orbHover.trigger();          break;
+        case 'spark_burst':     sparkBurst.trigger();        break;
+        case 'energy_wave':     energyWave.trigger();        break;
+        case 'star_surge':      starSurge.trigger();         break;
+        case 'conduit_flash':   conduitFlash.trigger();      break;
+        case 'vapor_puff':      vaporPuff.trigger();         break;
+        case 'night_shift':     nightShift.trigger();        break;
+      }
+    }
+
+    window.chrome?.webview?.addEventListener('message', e => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'event') handleSceneEvent(msg.name, msg.data);
+      } catch {}
+    });
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  God Rays — permanent blue-violet light shafts from ceiling slits
+    // ══════════════════════════════════════════════════════════════════════════
+    const godRays = (() => {
+      const shafts = [
+        { nx: 0.34, angle:  0.18, phase: 0.00 },
+        { nx: 0.44, angle:  0.06, phase: 1.60 },
+        { nx: 0.50, angle:  0.00, phase: 2.90 },
+        { nx: 0.56, angle: -0.06, phase: 0.85 },
+        { nx: 0.66, angle: -0.18, phase: 4.20 },
+        { nx: 0.38, angle:  0.28, phase: 3.50 },
+        { nx: 0.62, angle: -0.28, phase: 1.10 },
+      ];
+
+      function draw(ctx, t) {
+        const W = window.innerWidth, H = window.innerHeight;
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+        for (const sh of shafts) {
+          const ox  = sh.nx * W, oy = H * 0.00;
+          const len = H * 1.30;
+          const rw  = W * (0.048 + 0.018 * Math.sin(t * 0.00036 + sh.phase));
+          const pulse = 0.52 + 0.24 * Math.sin(t * 0.00024 + sh.phase)
+                             + 0.14 * Math.sin(t * 0.00082 + sh.phase * 1.5)
+                             + 0.10 * Math.sin(t * 0.00190 + sh.phase * 2.3);
+          const ex = ox + Math.sin(sh.angle) * len, ey = len;
+          const perp = sh.angle + Math.PI / 2;
+          const phx = Math.cos(perp) * rw * 0.5, phy = Math.sin(perp) * rw * 0.5;
+          const grad = ctx.createLinearGradient(ox, oy, ex, ey);
+          const a0 = 0.042 * pulse, a1 = 0.014 * pulse;
+          grad.addColorStop(0,    `rgba(180,160,255,${a0.toFixed(3)})`);
+          grad.addColorStop(0.30, `rgba(140,120,240,${a1.toFixed(3)})`);
+          grad.addColorStop(0.70, `rgba(100, 80,220,${(a1*0.4).toFixed(3)})`);
+          grad.addColorStop(1,    'rgba(60,40,180,0)');
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.moveTo(ox - phx * 0.10, oy - phy * 0.10);
+          ctx.lineTo(ox + phx * 0.10, oy + phy * 0.10);
+          ctx.lineTo(ex + phx, ey + phy);
+          ctx.lineTo(ex - phx, ey - phy);
+          ctx.closePath();
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+      return { draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Altar Glow — pulsing gold + blue orb at the central altar
+    // ══════════════════════════════════════════════════════════════════════════
+    const altarGlow = (() => {
+      function draw(ctx, t, mul) {
+        if (!imgNaturalW) return;
+        const { s } = coverScale();
+
+        // Outer warm gold corona
+        const C = paintToCanvas(...ANCHORS.altarRingCenter);
+        const R  = 200 * s;
+        const pulse = (0.50
+          + 0.22 * Math.sin(t * 0.00078)
+          + 0.16 * Math.sin(t * 0.00198)
+          + 0.08 * Math.sin(t * 0.00610)
+          + 0.04 * Math.sin(t * 0.01420)
+        ) * mul;
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+
+        const ga = 0.075 * pulse;
+        const grd = ctx.createRadialGradient(C.x, C.y, 0, C.x, C.y, R * 2.8);
+        grd.addColorStop(0,    `rgba(255,200, 80,${Math.min(0.999, ga * 2.2).toFixed(3)})`);
+        grd.addColorStop(0.20, `rgba(230,165, 50,${(ga * 1.4).toFixed(3)})`);
+        grd.addColorStop(0.50, `rgba(180,110, 30,${ga.toFixed(3)})`);
+        grd.addColorStop(0.82, `rgba(100, 55, 10,${(ga * 0.20).toFixed(3)})`);
+        grd.addColorStop(1,    'rgba(50,20,0,0)');
+        ctx.fillStyle = grd;
+        ctx.beginPath(); ctx.arc(C.x, C.y, R * 2.8, 0, TAU); ctx.fill();
+
+        // Inner blue orb
+        const O = paintToCanvas(...ANCHORS.altarOrbCenter);
+        const oR = 80 * s;
+        const oPulse = (0.55
+          + 0.28 * Math.sin(t * 0.00112 + 1.8)
+          + 0.12 * Math.sin(t * 0.00346 + 0.7)
+          + 0.05 * Math.sin(t * 0.00890)
+        ) * mul;
+        const ob = 0.095 * oPulse;
+        const ogrd = ctx.createRadialGradient(O.x, O.y, 0, O.x, O.y, oR * 2.4);
+        ogrd.addColorStop(0,    `rgba(200,240,255,${Math.min(0.999, ob * 3.0).toFixed(3)})`);
+        ogrd.addColorStop(0.18, `rgba(140,210,255,${(ob * 2.0).toFixed(3)})`);
+        ogrd.addColorStop(0.45, `rgba( 80,170,255,${ob.toFixed(3)})`);
+        ogrd.addColorStop(0.78, `rgba( 40,100,220,${(ob * 0.22).toFixed(3)})`);
+        ogrd.addColorStop(1,    'rgba(10,40,140,0)');
+        ctx.fillStyle = ogrd;
+        ctx.beginPath(); ctx.arc(O.x, O.y, oR * 2.4, 0, TAU); ctx.fill();
+
+        ctx.restore();
+      }
+      return { draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Star Window — cosmic rear portal glow + star particles
+    // ══════════════════════════════════════════════════════════════════════════
+    const starWindow = (() => {
+      const STAR_COUNT = 60;
+      const stars = Array.from({ length: STAR_COUNT }, () => ({
+        nx: rnd(-0.14, 0.14),  // offset from window center (normalized)
+        ny: rnd(-0.10, 0.10),
+        phase: rnd(0, TAU),
+        freq:  rnd(0.00080, 0.00240),
+        r:     rnd(0.8, 2.4),
+        base:  rnd(0.35, 0.85),
+      }));
+
+      function draw(ctx, t, mul) {
+        if (!imgNaturalW) return;
+        const W = window.innerWidth, H = window.innerHeight;
+        const { s } = coverScale();
+        const C = paintToCanvas(...ANCHORS.starWindowCenter);
+        const R = 260 * s;
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+
+        const breathe = (0.58 + 0.28 * Math.sin(t * 0.000148 + 0.5)
+                              + 0.14 * Math.sin(t * 0.000392)) * (mul || 1);
+        const ba = 0.065 * breathe;
+        const grd = ctx.createRadialGradient(C.x, C.y, 0, C.x, C.y, R * 2.6);
+        grd.addColorStop(0,    `rgba(180,220,255,${Math.min(0.999, ba * 2.8).toFixed(3)})`);
+        grd.addColorStop(0.22, `rgba(120,180,255,${(ba * 1.8).toFixed(3)})`);
+        grd.addColorStop(0.50, `rgba( 70,130,240,${ba.toFixed(3)})`);
+        grd.addColorStop(0.78, `rgba( 30, 70,200,${(ba * 0.28).toFixed(3)})`);
+        grd.addColorStop(1,    'rgba(10,30,140,0)');
+        ctx.fillStyle = grd;
+        ctx.beginPath(); ctx.arc(C.x, C.y, R * 2.6, 0, TAU); ctx.fill();
+
+        // Star particles inside the window area
+        for (const st of stars) {
+          const twinkle = st.base * Math.pow(0.5 + 0.5 * Math.sin(t * st.freq + st.phase), 2);
+          if (twinkle < 0.04) continue;
+          const sx = C.x + st.nx * R * 2.0, sy = C.y + st.ny * R * 2.0;
+          // Clip to portal ellipse
+          const dx = (sx - C.x) / (R * 1.6), dy = (sy - C.y) / (R * 1.1);
+          if (dx*dx + dy*dy > 1) continue;
+          const sgrd = ctx.createRadialGradient(sx, sy, 0, sx, sy, st.r * 3.0);
+          sgrd.addColorStop(0, `rgba(255,255,255,${(twinkle * 0.9).toFixed(3)})`);
+          sgrd.addColorStop(1, 'rgba(180,210,255,0)');
+          ctx.fillStyle = sgrd;
+          ctx.beginPath(); ctx.arc(sx, sy, st.r * 3.0, 0, TAU); ctx.fill();
+        }
+
+        ctx.restore();
+      }
+      return { draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Crystal Pillars — 4 tall glowing columns (ambient blue-purple)
+    // ══════════════════════════════════════════════════════════════════════════
+    const crystalPillars = (() => {
+      const PILLARS = [
+        { anchor: 'leftPillarInner',  ph: 0.00, a: 0.80 },
+        { anchor: 'rightPillarInner', ph: 1.82, a: 0.80 },
+        { anchor: 'leftPillarOuter',  ph: 3.14, a: 0.55 },
+        { anchor: 'rightPillarOuter', ph: 5.02, a: 0.55 },
+      ];
+
+      function draw(ctx, t) {
+        if (!imgNaturalW) return;
+        const { s } = coverScale();
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+        for (const p of PILLARS) {
+          if (!ANCHORS[p.anchor]) continue;
+          const C = paintToCanvas(...ANCHORS[p.anchor]);
+          const breathe = 0.52 + 0.26 * Math.sin(t * 0.000164 + p.ph)
+                               + 0.14 * Math.sin(t * 0.000388 + p.ph * 1.4)
+                               + 0.08 * Math.sin(t * 0.000920 + p.ph * 2.1);
+          const a = p.a * breathe * 0.065;
+          if (a < 0.005) continue;
+          const rx = 55 * s, ry = 340 * s;
+          ctx.save();
+          ctx.translate(C.x, C.y);
+          ctx.scale(1, ry / rx);
+          const grd = ctx.createRadialGradient(0, 0, 0, 0, 0, rx);
+          grd.addColorStop(0,    `rgba(180,140,255,${Math.min(0.999, a * 2.6).toFixed(3)})`);
+          grd.addColorStop(0.28, `rgba(140,100,250,${(a * 1.5).toFixed(3)})`);
+          grd.addColorStop(0.58, `rgba( 90, 60,220,${a.toFixed(3)})`);
+          grd.addColorStop(0.82, `rgba( 50, 30,180,${(a * 0.30).toFixed(3)})`);
+          grd.addColorStop(1,    'rgba(20,10,120,0)');
+          ctx.fillStyle = grd;
+          ctx.beginPath(); ctx.arc(0, 0, rx, 0, TAU); ctx.fill();
+          ctx.restore();
+        }
+        ctx.restore();
+      }
+      return { draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Floor Pulse — light orb traveling along the center floor channel
+    // ══════════════════════════════════════════════════════════════════════════
+    const floorPulse = (() => {
+      const PERIOD = 5200; // ms for one trip
+      const TRAIL  = 5;    // trail segments
+
+      function draw(ctx, t) {
+        if (!imgNaturalW) return;
+        const { s } = coverScale();
+        const near = paintToCanvas(...ANCHORS.floorChannelNear);
+        const far  = paintToCanvas(...ANCHORS.floorChannelFar);
+        const p    = (t % (PERIOD * 2)) / PERIOD;
+        const frac = p < 1 ? p : 2 - p; // ping-pong 0→1→0
+        const cx   = near.x + (far.x - near.x) * frac;
+        const cy   = near.y + (far.y - near.y) * frac;
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+
+        // Trail
+        for (let i = 1; i <= TRAIL; i++) {
+          const tf   = clamp(frac - i * 0.025, 0, 1);
+          const tx   = near.x + (far.x - near.x) * tf;
+          const ty   = near.y + (far.y - near.y) * tf;
+          const ta   = 0.18 * (1 - i / (TRAIL + 1));
+          if (ta < 0.01) continue;
+          const r    = (8 - i) * s;
+          const tgrd = ctx.createRadialGradient(tx, ty, 0, tx, ty, r * 2.5);
+          tgrd.addColorStop(0, `rgba(120,200,255,${ta.toFixed(3)})`);
+          tgrd.addColorStop(1, 'rgba(60,100,200,0)');
+          ctx.fillStyle = tgrd;
+          ctx.beginPath(); ctx.arc(tx, ty, r * 2.5, 0, TAU); ctx.fill();
+        }
+
+        // Main orb
+        const oR  = 10 * s;
+        const ogrd = ctx.createRadialGradient(cx, cy, 0, cx, cy, oR * 3.0);
+        ogrd.addColorStop(0,    'rgba(240,255,255,0.72)');
+        ogrd.addColorStop(0.25, 'rgba(160,230,255,0.42)');
+        ogrd.addColorStop(0.65, 'rgba( 80,160,255,0.18)');
+        ogrd.addColorStop(1,    'rgba( 40, 80,200,0)');
+        ctx.fillStyle = ogrd;
+        ctx.beginPath(); ctx.arc(cx, cy, oR * 3.0, 0, TAU); ctx.fill();
+        ctx.restore();
+      }
+      return { draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Dust Motes — 50 tiny floating particles drifting upward
+    // ══════════════════════════════════════════════════════════════════════════
+    const dustMotes = (() => {
+      const COUNT = 50;
+      let motes = [];
+
+      function init() {
+        const W = window.innerWidth, H = window.innerHeight;
+        motes = Array.from({ length: COUNT }, () => ({
+          x:     rnd(W * 0.12, W * 0.88),
+          y:     rnd(0, H),
+          vx:    rnd(-0.15, 0.15),
+          vy:    rnd(-0.35, -0.10),
+          r:     rnd(0.8, 2.2),
+          phase: rnd(0, TAU),
+          freq:  rnd(0.00110, 0.00360),
+          gold:  Math.random() < 0.30, // 30% warm gold, 70% cool white
+        }));
+      }
+      init();
+
+      function update(dt) {
+        const W = window.innerWidth, H = window.innerHeight;
+        for (const m of motes) {
+          m.x += m.vx;
+          m.y += m.vy;
+          m.x += Math.sin(m.phase * 3.7) * 0.08;
+          if (m.y < -10) { m.y = H + 10; m.x = rnd(W * 0.12, W * 0.88); }
+        }
+      }
+
+      function draw(ctx, t) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+        for (const m of motes) {
+          const twinkle = Math.pow(0.5 + 0.5 * Math.sin(t * m.freq + m.phase), 2.0);
+          const a = 0.55 * twinkle;
+          if (a < 0.02) continue;
+          const grd = ctx.createRadialGradient(m.x, m.y, 0, m.x, m.y, m.r * 3.2);
+          if (m.gold) {
+            grd.addColorStop(0, `rgba(255,230,140,${(a * 1.8).toFixed(3)})`);
+            grd.addColorStop(1, 'rgba(200,140,50,0)');
+          } else {
+            grd.addColorStop(0, `rgba(220,240,255,${(a * 1.6).toFixed(3)})`);
+            grd.addColorStop(1, 'rgba(100,160,255,0)');
+          }
+          ctx.fillStyle = grd;
+          ctx.beginPath(); ctx.arc(m.x, m.y, m.r * 3.2, 0, TAU); ctx.fill();
+        }
+        ctx.restore();
+      }
+      return { init, update, draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Candle Flicker — warm amber glow at shrine lamps and altar candles
+    // ══════════════════════════════════════════════════════════════════════════
+    const candleFlicker = (() => {
+      const CANDLES = [
+        { anchor: 'leftLamp',  ph: 0.00, r: 22 },
+        { anchor: 'rightLamp', ph: 2.88, r: 22 },
+        // altar base candles (null until measured — gated)
+        { anchor: null, px: 795, py: 704, ph: 1.44, r: 12 },
+        { anchor: null, px: 877, py: 704, ph: 4.32, r: 12 },
+        { anchor: null, px: 760, py: 726, ph: 3.60, r:  9 },
+        { anchor: null, px: 912, py: 726, ph: 5.76, r:  9 },
+      ];
+
+      function draw(ctx, t) {
+        if (!imgNaturalW) return;
+        const { s } = coverScale();
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+        for (const c of CANDLES) {
+          let cx, cy;
+          if (c.anchor) {
+            if (!ANCHORS[c.anchor]) continue;
+            const pt = paintToCanvas(...ANCHORS[c.anchor]);
+            cx = pt.x; cy = pt.y;
+          } else {
+            const pt = paintToCanvas(c.px, c.py);
+            cx = pt.x; cy = pt.y;
+          }
+          const flicker = 0.62 + 0.22 * Math.sin(t * (0.00420 + 0.00080 * c.ph) + c.ph)
+                               + 0.12 * Math.sin(t * (0.01180 + 0.00240 * c.ph) + c.ph * 1.8)
+                               + 0.04 * Math.sin(t * 0.02100 + c.ph * 3.2);
+          const r  = c.r * s;
+          const a  = 0.065 * clamp(flicker, 0.1, 1.8);
+          const grd = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 3.0);
+          grd.addColorStop(0,    `rgba(255,230,130,${Math.min(0.999, a * 3.5).toFixed(3)})`);
+          grd.addColorStop(0.30, `rgba(255,180, 60,${(a * 2.0).toFixed(3)})`);
+          grd.addColorStop(0.60, `rgba(220,120, 30,${a.toFixed(3)})`);
+          grd.addColorStop(1,    'rgba(140,60,0,0)');
+          ctx.fillStyle = grd;
+          ctx.beginPath(); ctx.arc(cx, cy, r * 3.0, 0, TAU); ctx.fill();
+        }
+        ctx.restore();
+      }
+      return { draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Fog Basin — permanent blue-grey ground mist
+    // ══════════════════════════════════════════════════════════════════════════
+    const fogBasin = (() => {
+      const PATCHES = [
+        { nx: 0.16, ny: 0.85, rNx: 0.175, rNy: 0.065, ph: 0.00, dax: 0.036, day: 0.012, dfx: 0.000172, dfy: 0.000228, a: 0.280 },
+        { nx: 0.50, ny: 0.78, rNx: 0.195, rNy: 0.085, ph: 2.20, dax: 0.030, day: 0.016, dfx: 0.000206, dfy: 0.000175, a: 0.250 },
+        { nx: 0.84, ny: 0.83, rNx: 0.158, rNy: 0.062, ph: 1.30, dax: 0.028, day: 0.012, dfx: 0.000158, dfy: 0.000248, a: 0.270 },
+        { nx: 0.30, ny: 0.92, rNx: 0.142, rNy: 0.052, ph: 3.90, dax: 0.040, day: 0.010, dfx: 0.000190, dfy: 0.000285, a: 0.230 },
+        { nx: 0.70, ny: 0.89, rNx: 0.130, rNy: 0.058, ph: 0.95, dax: 0.025, day: 0.015, dfx: 0.000236, dfy: 0.000152, a: 0.220 },
+      ];
+
+      function draw(ctx, t) {
+        const W = window.innerWidth, H = window.innerHeight;
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+        for (const p of PATCHES) {
+          const cx = (p.nx + Math.sin(t * p.dfx + p.ph)        * p.dax) * W;
+          const cy = (p.ny + Math.cos(t * p.dfy + p.ph * 0.78) * p.day) * H;
+          const breathe = 0.54 + 0.28 * Math.sin(t * 0.000118 + p.ph)
+                               + 0.18 * Math.sin(t * 0.000262 + p.ph * 1.6);
+          const a  = p.a * breathe;
+          if (a < 0.01) continue;
+          const rx = p.rNx * W, ry = p.rNy * H;
+          ctx.save();
+          ctx.translate(cx, cy);
+          ctx.scale(1, ry / rx);
+          const grd = ctx.createRadialGradient(0, 0, 0, 0, 0, rx);
+          grd.addColorStop(0,    `rgba(180,200,235,${Math.min(0.999, a * 1.30).toFixed(3)})`);
+          grd.addColorStop(0.42, `rgba(165,190,225,${a.toFixed(3)})`);
+          grd.addColorStop(0.74, `rgba(150,178,215,${(a * 0.48).toFixed(3)})`);
+          grd.addColorStop(1,    'rgba(130,160,205,0)');
+          ctx.fillStyle = grd;
+          ctx.beginPath(); ctx.arc(0, 0, rx, 0, TAU); ctx.fill();
+          ctx.restore();
+        }
+        ctx.restore();
+      }
+      return { draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Light Shaft — dramatic extra ceiling ray (event, like sunbeamShift)
+    // ══════════════════════════════════════════════════════════════════════════
+    const lightShaft = (() => {
+      const DUR = 10000;
+      let t0 = -Infinity, startNX = 0.50, endNX = 0.50, angle0 = 0.00;
+
+      function trigger() {
+        t0      = performance.now();
+        startNX = rnd(0.32, 0.68);
+        endNX   = startNX + rnd(-0.12, 0.12);
+        angle0  = rnd(-0.08, 0.08);
+      }
+
+      function draw(ctx, now) {
+        const age = now - t0;
+        if (age < 0 || age >= DUR) return;
+        const W = window.innerWidth, H = window.innerHeight;
+        const p    = age / DUR;
+        const env  = Math.min(p / 0.12, 1) * Math.min(1, (1 - p) / 0.18);
+        if (env < 0.01) return;
+
+        const nx   = startNX + (endNX - startNX) * p;
+        const ox   = nx * W, oy = 0;
+        const len  = H * 1.32;
+        const rw   = W * 0.060;
+        const ang  = angle0;
+        const ex   = ox + Math.sin(ang) * len, ey = len;
+        const perp = ang + Math.PI / 2;
+        const phx  = Math.cos(perp) * rw * 0.5, phy = Math.sin(perp) * rw * 0.5;
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+        ctx.globalAlpha = env;
+
+        const grad = ctx.createLinearGradient(ox, oy, ex, ey);
+        grad.addColorStop(0,    'rgba(240,230,255,0.16)');
+        grad.addColorStop(0.28, 'rgba(200,180,255,0.07)');
+        grad.addColorStop(0.65, 'rgba(160,130,240,0.03)');
+        grad.addColorStop(1,    'rgba(100,80,200,0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.moveTo(ox - phx * 0.08, oy);
+        ctx.lineTo(ox + phx * 0.08, oy);
+        ctx.lineTo(ex + phx, ey + phy);
+        ctx.lineTo(ex - phx, ey - phy);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.restore();
+      }
+      return { trigger, draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Altar Surge — altar blazes; rings sweep arcs of light
+    // ══════════════════════════════════════════════════════════════════════════
+    const altarSurge = (() => {
+      const DUR = 12000;
+      let t0 = -Infinity;
+
+      function trigger() { t0 = performance.now(); }
+
+      function getMul(now) {
+        const age = now - t0;
+        if (age < 0 || age >= DUR) return 1;
+        const p   = age / DUR;
+        const env = Math.min(p / 0.10, 1) * Math.min(1, (1 - p) / 0.20);
+        return 1 + env * 2.2;
+      }
+
+      function draw(ctx, now) {
+        if (!imgNaturalW) return;
+        const age = now - t0;
+        if (age < 0 || age >= DUR) return;
+        const p   = age / DUR;
+        const env = Math.min(p / 0.10, 1) * Math.min(1, (1 - p) / 0.20);
+        if (env < 0.02) return;
+
+        const { s } = coverScale();
+        const C = paintToCanvas(...ANCHORS.altarRingCenter);
+        const R = 100 * s;
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+        ctx.globalAlpha = env;
+
+        // Spinning arc rings
+        const spinA = (age * 0.00240) % TAU;
+        const spinB = (age * -0.00168) % TAU;
+        for (const [ang, col, lw] of [
+          [spinA, 'rgba(255,200,80,0.55)', 2.5 * s],
+          [spinB, 'rgba(160,220,255,0.48)', 1.8 * s],
+          [spinA * 0.62, 'rgba(200,160,255,0.40)', 1.4 * s],
+        ]) {
+          ctx.beginPath();
+          ctx.arc(C.x, C.y, R, ang, ang + Math.PI * 1.3);
+          ctx.strokeStyle = col;
+          ctx.lineWidth   = lw;
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(C.x, C.y, R * 0.65, ang + 1.2, ang + Math.PI * 0.9);
+          ctx.strokeStyle = col;
+          ctx.lineWidth   = lw * 0.7;
+          ctx.stroke();
+        }
+
+        ctx.restore();
+      }
+      return { trigger, getMul, draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Hologram Alcove — one of 4 holograph images appears in a side alcove
+    // ══════════════════════════════════════════════════════════════════════════
+    const hologramAlcove = (() => {
+      const DUR   = 14000;
+      const IMGS  = [1, 2, 3, 4].map(i => {
+        const img = new Image();
+        img.src   = `holograph${i}.png`;
+        return img;
+      });
+      let t0 = -Infinity, side = 0, imgIdx = 0;
+
+      function trigger() {
+        t0     = performance.now();
+        side   = Math.random() < 0.5 ? -1 : 1;  // -1=left, 1=right
+        imgIdx = Math.floor(Math.random() * 4);
+      }
+
+      function draw(ctx, now) {
+        const age = now - t0;
+        if (age < 0 || age >= DUR) return;
+        const img = IMGS[imgIdx];
+        if (!img.complete || !img.naturalWidth || !imgNaturalW) return;
+
+        const H   = window.innerHeight;
+        const { s } = coverScale();
+        const anchorKey = side < 0 ? 'leftAlcove' : 'rightAlcove';
+        if (!ANCHORS[anchorKey]) return;
+        const C = paintToCanvas(...ANCHORS[anchorKey]);
+
+        const p   = age / DUR;
+        const env = Math.min(p / 0.09, 1) * Math.min(1, (1 - p) / 0.13);
+        if (env < 0.01) return;
+
+        // Size: tall narrow sprite fitted to alcove-ish height
+        const hH  = H * 0.50;
+        const hW  = hH * (img.naturalWidth / img.naturalHeight);
+        const dx  = C.x - hW * 0.5;
+        const dy  = C.y - hH * 0.72; // anchor at ~72% down the holograph height
+
+        ctx.save();
+        ctx.globalAlpha = env * 0.88;
+
+        // Subtle outer glow (screen)
+        ctx.globalCompositeOperation = 'screen';
+        const glowR = hW * 0.8;
+        const grd   = ctx.createRadialGradient(C.x, C.y - hH * 0.20, 0, C.x, C.y - hH * 0.20, glowR);
+        grd.addColorStop(0, `rgba(100,120,255,${(0.20 * env).toFixed(3)})`);
+        grd.addColorStop(1, 'rgba(50,60,200,0)');
+        ctx.fillStyle = grd;
+        ctx.beginPath(); ctx.arc(C.x, C.y - hH * 0.20, glowR, 0, TAU); ctx.fill();
+
+        // Holograph image
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.drawImage(img, dx, dy, hW, hH);
+
+        ctx.restore();
+      }
+      return { trigger, draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Spider Patrol — animated spider robot walks across the floor
+    //  Sprite sheet: 48 frames, 16 cols × 3 rows, 688×264 per frame (60ms/frame)
+    // ══════════════════════════════════════════════════════════════════════════
+    const spiderPatrol = (() => {
+      const FRAMES    = 48;
+      const COLS      = 16;
+      const FW        = 688, FH = 264;  // sprite frame dimensions
+      const FRAME_MS  = 60;             // ms per animation frame
+      const DUR       = 16000;
+
+      const _sheet = new Image();
+      _sheet.src   = 'spider_walk_sheet.png';
+
+      let active = false, t0 = 0, dir = -1;
+
+      function trigger() {
+        if (active) return;
+        active = true;
+        t0  = performance.now();
+        dir = Math.random() < 0.5 ? 1 : -1;
+      }
+
+      function draw(ctx, now) {
+        if (!active || !_sheet.complete || !imgNaturalW) return;
+        const elapsed = now - t0;
+        if (elapsed >= DUR) { active = false; return; }
+
+        const W = window.innerWidth, H = window.innerHeight;
+        const { s } = coverScale();
+
+        const frameIdx = Math.floor(elapsed / FRAME_MS) % FRAMES;
+        const col = frameIdx % COLS;
+        const row = Math.floor(frameIdx / COLS);
+
+        // Scale: spider ≈ 22% of screen width
+        const spW = W * 0.22;
+        const spH = spW * (FH / FW);
+
+        // Ground Y
+        const groundY = ANCHORS.floorWalkY
+          ? paintToCanvas(...ANCHORS.floorWalkY).y
+          : H * 0.87;
+
+        // X position: linear march across scene + overshoot off-screen
+        const p = elapsed / DUR;
+        const startX = dir > 0 ? -spW       : W + spW;
+        const endX   = dir > 0 ? W + spW    : -spW;
+        const screenX = startX + (endX - startX) * p;
+
+        // Fade in/out
+        const alpha = Math.min(p / 0.06, 1) * Math.min(1, (1 - p) / 0.06);
+
+        ctx.save();
+        ctx.globalAlpha = alpha;
+
+        if (dir > 0) {
+          // L→R: flip sprite (it faces left naturally)
+          ctx.translate(screenX + spW, groundY - spH);
+          ctx.scale(-1, 1);
+          ctx.drawImage(_sheet, col * FW, row * FH, FW, FH, 0, 0, spW, spH);
+        } else {
+          // R→L: natural orientation
+          ctx.drawImage(_sheet, col * FW, row * FH, FW, FH, screenX - spW * 0.5, groundY - spH, spW, spH);
+        }
+
+        ctx.restore();
+      }
+      return { trigger, draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Orb Hover — floating sphere robot glides through the mid-scene
+    // ══════════════════════════════════════════════════════════════════════════
+    const orbHover = (() => {
+      const DUR = 14000;
+      const _img = new Image();
+      _img.src   = 'robot_orb.png';
+      let t0 = -Infinity, dir = 1;
+
+      function trigger() {
+        t0  = performance.now();
+        dir = Math.random() < 0.5 ? 1 : -1;
+      }
+
+      function draw(ctx, now) {
+        if (!_img.complete || !imgNaturalW) return;
+        const elapsed = now - t0;
+        if (elapsed < 0 || elapsed >= DUR) return;
+
+        const W = window.innerWidth, H = window.innerHeight;
+        const { s } = coverScale();
+
+        const oH   = H * 0.18;
+        const oW   = oH; // square sprite
+        const p    = elapsed / DUR;
+        const alpha = Math.min(p / 0.08, 1) * Math.min(1, (1 - p) / 0.08);
+
+        // Gentle arc path at mid-scene height, slight dip in middle
+        const screenY = H * (0.40 + 0.04 * Math.sin(p * Math.PI))
+                       + Math.sin(elapsed * 0.0014) * H * 0.012;
+
+        const startX = dir > 0 ? -oW : W + oW;
+        const endX   = dir > 0 ? W + oW : -oW;
+        const screenX = startX + (endX - startX) * p;
+
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.drawImage(_img, screenX - oW * 0.5, screenY - oH * 0.5, oW, oH);
+
+        // Thruster glow beneath orb
+        const tx = screenX, ty = screenY + oH * 0.38;
+        const gR = oH * 0.35 * (0.75 + 0.25 * Math.sin(now * 0.0092));
+        const grd = ctx.createRadialGradient(tx, ty, 0, tx, ty, gR);
+        grd.addColorStop(0, `rgba(140,80,255,${(0.38 * alpha).toFixed(3)})`);
+        grd.addColorStop(0.5, `rgba(90,40,200,${(0.14 * alpha).toFixed(3)})`);
+        grd.addColorStop(1, 'rgba(40,10,140,0)');
+        ctx.globalCompositeOperation = 'screen';
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = grd;
+        ctx.beginPath(); ctx.arc(tx, ty, gR, 0, TAU); ctx.fill();
+
+        ctx.restore();
+      }
+      return { trigger, draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Spark Burst — electrical sparks at broken panel edges
+    // ══════════════════════════════════════════════════════════════════════════
+    const sparkBurst = (() => {
+      const DUR    = 3800;
+      const SPARKS = 4;
+      let t0   = -Infinity;
+      let pts  = [];
+      let side = 0;
+
+      function trigger() {
+        t0   = performance.now();
+        side = Math.random() < 0.5 ? 'L' : 'R';
+        const ancKey = `sparkPoint${side}`;
+        if (!ANCHORS[ancKey] || !imgNaturalW) { t0 = -Infinity; return; }
+        const { s } = coverScale();
+        const C = paintToCanvas(...ANCHORS[ancKey]);
+        pts = Array.from({ length: SPARKS }, (_, i) => ({
+          delay: i * 180,
+          ox: C.x + rnd(-18, 18) * s,
+          oy: C.y + rnd(-12, 12) * s,
+          ex: C.x + rnd(-50, 50) * s,
+          ey: C.y + rnd(-60, 20) * s,
+          mx: C.x + rnd(-30, 30) * s,
+          my: C.y + rnd(-40, 10) * s,
+        }));
+      }
+
+      function draw(ctx, now) {
+        if (!imgNaturalW) return;
+        const age = now - t0;
+        if (age < 0 || age >= DUR) return;
+        const env  = Math.min(age / 180, 1) * Math.max(0, 1 - (age - DUR * 0.6) / (DUR * 0.4));
+        const { s } = coverScale();
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+
+        for (const p of pts) {
+          if (age < p.delay) continue;
+          const jx = rnd(-4, 4) * s, jy = rnd(-4, 4) * s; // crackle jitter per frame
+          ctx.shadowColor = 'rgba(120,180,255,0.8)';
+          ctx.shadowBlur  = 10 * s;
+          ctx.strokeStyle = `rgba(140,200,255,${(0.65 * env).toFixed(3)})`;
+          ctx.lineWidth   = 2.0 * s;
+          ctx.beginPath();
+          ctx.moveTo(p.ox, p.oy);
+          ctx.quadraticCurveTo(p.mx + jx, p.my + jy, p.ex + jx, p.ey + jy);
+          ctx.stroke();
+
+          ctx.strokeStyle = `rgba(240,252,255,${(0.88 * env).toFixed(3)})`;
+          ctx.lineWidth   = 0.8 * s;
+          ctx.beginPath();
+          ctx.moveTo(p.ox, p.oy);
+          ctx.quadraticCurveTo(p.mx + jx * 0.5, p.my + jy * 0.5, p.ex + jx * 0.5, p.ey + jy * 0.5);
+          ctx.stroke();
+        }
+
+        ctx.shadowBlur = 0;
+        ctx.restore();
+      }
+      return { trigger, draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Energy Wave — fast pulse travels along floor channel
+    // ══════════════════════════════════════════════════════════════════════════
+    const energyWave = (() => {
+      const DUR = 5500;
+      let t0 = -Infinity, dir = 1;
+
+      function trigger() {
+        t0  = performance.now();
+        dir = Math.random() < 0.5 ? 1 : -1;
+      }
+
+      function draw(ctx, now) {
+        if (!imgNaturalW) return;
+        const age = now - t0;
+        if (age < 0 || age >= DUR) return;
+        const { s } = coverScale();
+        const near = paintToCanvas(...ANCHORS.floorChannelNear);
+        const far  = paintToCanvas(...ANCHORS.floorChannelFar);
+        const p    = age / DUR;
+        const frac = dir > 0 ? p : 1 - p;
+        const cx   = near.x + (far.x - near.x) * frac;
+        const cy   = near.y + (far.y - near.y) * frac;
+        const env  = Math.min(p / 0.06, 1) * Math.min(1, (1 - p) / 0.06);
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+
+        // Bright head orb
+        const r   = 14 * s;
+        const grd = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 4);
+        grd.addColorStop(0,    `rgba(255,255,255,${(0.9 * env).toFixed(3)})`);
+        grd.addColorStop(0.20, `rgba(180,240,255,${(0.55 * env).toFixed(3)})`);
+        grd.addColorStop(0.55, `rgba( 80,180,255,${(0.22 * env).toFixed(3)})`);
+        grd.addColorStop(1,    'rgba(30,80,200,0)');
+        ctx.fillStyle = grd;
+        ctx.beginPath(); ctx.arc(cx, cy, r * 4, 0, TAU); ctx.fill();
+
+        // Trailing streak
+        const dLen = Math.hypot(far.x - near.x, far.y - near.y);
+        const nx   = (far.x - near.x) / dLen, ny = (far.y - near.y) / dLen;
+        const tLen = r * 12 * (dir > 0 ? -1 : 1);
+        const txEnd = cx + nx * tLen, tyEnd = cy + ny * tLen;
+        const lgrad = ctx.createLinearGradient(cx, cy, txEnd, tyEnd);
+        lgrad.addColorStop(0, `rgba(200,240,255,${(0.38 * env).toFixed(3)})`);
+        lgrad.addColorStop(1, 'rgba(60,120,200,0)');
+        ctx.strokeStyle = lgrad;
+        ctx.lineWidth   = 3 * s;
+        ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(txEnd, tyEnd); ctx.stroke();
+
+        ctx.restore();
+      }
+      return { trigger, draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Star Surge — rear window flares; particles radiate outward
+    // ══════════════════════════════════════════════════════════════════════════
+    const starSurge = (() => {
+      const DUR = 12000;
+      const N   = 35;
+      let t0    = -Infinity;
+      let pts   = [];
+
+      function trigger() {
+        t0 = performance.now();
+        if (!imgNaturalW) return;
+        const C = paintToCanvas(...ANCHORS.starWindowCenter);
+        const { s } = coverScale();
+        pts = Array.from({ length: N }, () => {
+          const ang = rnd(0, TAU), spd = rnd(0.5, 2.2) * s;
+          return {
+            x: C.x, y: C.y, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+            r: rnd(1.0, 3.0), phase: rnd(0, TAU), delay: rnd(0, 2200),
+          };
+        });
+      }
+
+      function getMul(now) {
+        const age = now - t0;
+        if (age < 0 || age >= DUR) return 1;
+        const p   = age / DUR;
+        const env = Math.min(p / 0.10, 1) * Math.min(1, (1 - p) / 0.22);
+        return 1 + env * 2.8;
+      }
+
+      function draw(ctx, now) {
+        const age = now - t0;
+        if (age < 0 || age >= DUR || !imgNaturalW) return;
+        const p   = age / DUR;
+        const env = Math.min(p / 0.12, 1) * Math.min(1, (1 - p) / 0.18);
+        if (env < 0.01) return;
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+
+        const C = paintToCanvas(...ANCHORS.starWindowCenter);
+        const { s } = coverScale();
+
+        // Extra bright flare
+        const fR   = 380 * s * env;
+        const fGrd = ctx.createRadialGradient(C.x, C.y, 0, C.x, C.y, fR);
+        fGrd.addColorStop(0,    `rgba(220,240,255,${(0.18 * env).toFixed(3)})`);
+        fGrd.addColorStop(0.35, `rgba(140,200,255,${(0.08 * env).toFixed(3)})`);
+        fGrd.addColorStop(1,    'rgba(60,120,220,0)');
+        ctx.fillStyle = fGrd;
+        ctx.beginPath(); ctx.arc(C.x, C.y, fR, 0, TAU); ctx.fill();
+
+        // Radiating particles
+        for (const p2 of pts) {
+          if (age < p2.delay) continue;
+          const localAge = age - p2.delay;
+          const localP   = localAge / (DUR - p2.delay);
+          const lEnv     = Math.min(localP / 0.08, 1) * Math.max(0, 1 - localP);
+          if (lEnv < 0.01) continue;
+          const x = p2.x + p2.vx * localAge * 0.06;
+          const y = p2.y + p2.vy * localAge * 0.06;
+          const twinkle = 0.5 + 0.5 * Math.sin(localAge * 0.004 + p2.phase);
+          const a   = lEnv * twinkle * 0.70;
+          const pGrd = ctx.createRadialGradient(x, y, 0, x, y, p2.r * 3.0);
+          pGrd.addColorStop(0, `rgba(255,255,255,${a.toFixed(3)})`);
+          pGrd.addColorStop(1, 'rgba(100,180,255,0)');
+          ctx.fillStyle = pGrd;
+          ctx.beginPath(); ctx.arc(x, y, p2.r * 3.0, 0, TAU); ctx.fill();
+        }
+
+        ctx.restore();
+      }
+      return { trigger, getMul, draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Conduit Flash — energy pulse travels along a crystal pillar (vertical)
+    // ══════════════════════════════════════════════════════════════════════════
+    const conduitFlash = (() => {
+      const DUR = 8000;
+      let t0    = -Infinity, side = 0, downward = true;
+
+      function trigger() {
+        t0       = performance.now();
+        side     = Math.random() < 0.5 ? 'L' : 'R';
+        downward = Math.random() < 0.5;
+      }
+
+      function draw(ctx, now) {
+        if (!imgNaturalW) return;
+        const age = now - t0;
+        if (age < 0 || age >= DUR) return;
+        const topKey = `conduit${side}Top`, botKey = `conduit${side}Bot`;
+        if (!ANCHORS[topKey] || !ANCHORS[botKey]) return;
+
+        const { s } = coverScale();
+        const top = paintToCanvas(...ANCHORS[topKey]);
+        const bot = paintToCanvas(...ANCHORS[botKey]);
+        const p   = age / DUR;
+        const frac = downward ? p : 1 - p;
+        const cx  = top.x + (bot.x - top.x) * frac;
+        const cy  = top.y + (bot.y - top.y) * frac;
+        const env = Math.min(p / 0.08, 1) * Math.min(1, (1 - p) / 0.08);
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+
+        // Pillar segment glow (behind streak)
+        const segLen = Math.hypot(bot.x - top.x, bot.y - top.y) * 0.25;
+        const ny     = (bot.y - top.y) / Math.hypot(bot.x - top.x, bot.y - top.y);
+        const segGrd = ctx.createLinearGradient(cx, cy - segLen * 0.5, cx, cy + segLen * 0.5);
+        segGrd.addColorStop(0, 'rgba(180,140,255,0)');
+        segGrd.addColorStop(0.5, `rgba(220,180,255,${(0.28 * env).toFixed(3)})`);
+        segGrd.addColorStop(1, 'rgba(180,140,255,0)');
+        ctx.strokeStyle = segGrd;
+        ctx.lineWidth   = 10 * s;
+        ctx.beginPath(); ctx.moveTo(cx, cy - segLen * 0.5); ctx.lineTo(cx, cy + segLen * 0.5); ctx.stroke();
+
+        // Bright spark head
+        const hR  = 12 * s;
+        const hGrd = ctx.createRadialGradient(cx, cy, 0, cx, cy, hR * 3.5);
+        hGrd.addColorStop(0,    `rgba(255,255,255,${(0.88 * env).toFixed(3)})`);
+        hGrd.addColorStop(0.25, `rgba(200,180,255,${(0.50 * env).toFixed(3)})`);
+        hGrd.addColorStop(0.65, `rgba(140,100,255,${(0.20 * env).toFixed(3)})`);
+        hGrd.addColorStop(1,    'rgba(80,40,200,0)');
+        ctx.fillStyle = hGrd;
+        ctx.beginPath(); ctx.arc(cx, cy, hR * 3.5, 0, TAU); ctx.fill();
+
+        ctx.restore();
+      }
+      return { trigger, draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Vapor Puff — mist rises from a floor vent
+    // ══════════════════════════════════════════════════════════════════════════
+    const vaporPuff = (() => {
+      const DUR = 8000;
+      const N   = 28;
+      let t0    = -Infinity;
+      let pts   = [];
+
+      function trigger() {
+        t0 = performance.now();
+        if (!imgNaturalW) return;
+        const vKey = Math.random() < 0.5 ? 'ventL' : 'ventR';
+        if (!ANCHORS[vKey]) return;
+        const C = paintToCanvas(...ANCHORS[vKey]);
+        const { s } = coverScale();
+        pts = Array.from({ length: N }, () => ({
+          x:     C.x + rnd(-10, 10) * s,
+          y:     C.y,
+          vx:    rnd(-0.4, 0.4) * s,
+          vy:    rnd(-0.8, -0.3) * s,
+          r:     rnd(14, 30) * s,
+          phase: rnd(0, TAU),
+          delay: rnd(0, 1800),
+        }));
+      }
+
+      function draw(ctx, now) {
+        const age = now - t0;
+        if (age < 0 || age >= DUR || !imgNaturalW) return;
+        const env = Math.min(age / 600, 1) * Math.min(1, (DUR - age) / 900);
+        if (env < 0.01) return;
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+
+        for (const p of pts) {
+          if (age < p.delay) continue;
+          const localAge = age - p.delay;
+          const localP   = localAge / (DUR - p.delay);
+          const lEnv     = Math.min(localP / 0.15, 1) * Math.max(0, 1 - localP * 0.9);
+          if (lEnv < 0.01) continue;
+          const x = p.x + p.vx * localAge * 0.04;
+          const y = p.y + p.vy * localAge * 0.04;
+          const r = p.r * (1 + localP * 1.6);
+          const a = lEnv * 0.18;
+          const grd = ctx.createRadialGradient(x, y, 0, x, y, r);
+          grd.addColorStop(0,   `rgba(200,220,240,${(a * 1.8).toFixed(3)})`);
+          grd.addColorStop(0.5, `rgba(180,205,230,${a.toFixed(3)})`);
+          grd.addColorStop(1,   'rgba(160,190,220,0)');
+          ctx.fillStyle = grd;
+          ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+        }
+
+        ctx.restore();
+      }
+      return { trigger, draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Night Shift — scene darkens via #night-overlay div
+    // ══════════════════════════════════════════════════════════════════════════
+    const nightShift = (() => {
+      const FADE_IN = 8000, HOLD = 14000, FADE_OUT = 10000;
+      const DUR     = FADE_IN + HOLD + FADE_OUT;
+      let t0        = -Infinity;
+      const _el     = document.getElementById('night-overlay');
+
+      function trigger() { t0 = performance.now(); }
+
+      function update(now) {
+        const age = now - t0;
+        if (age < 0 || age >= DUR) { _el.style.opacity = 0; return; }
+        let opacity;
+        if      (age < FADE_IN)            opacity = (age / FADE_IN) * 0.62;
+        else if (age < FADE_IN + HOLD)     opacity = 0.62;
+        else                               opacity = (1 - (age - FADE_IN - HOLD) / FADE_OUT) * 0.62;
+        _el.style.opacity = Math.max(0, opacity).toFixed(4);
+      }
+      return { trigger, update };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Draw order
+    // ══════════════════════════════════════════════════════════════════════════
+    function drawEffects(dt, t, now) {
+      fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
+
+      godRays.draw(fxCtx, t);
+      lightShaft.draw(fxCtx, now);
+      starWindow.draw(fxCtx, t, starSurge.getMul(now));
+      starSurge.draw(fxCtx, now);
+      crystalPillars.draw(fxCtx, t);
+      altarGlow.draw(fxCtx, t, altarSurge.getMul(now));
+      altarSurge.draw(fxCtx, now);
+      fogBasin.draw(fxCtx, t);
+      floorPulse.draw(fxCtx, t);
+      energyWave.draw(fxCtx, now);
+      conduitFlash.draw(fxCtx, now);
+      sparkBurst.draw(fxCtx, now);
+      dustMotes.update(dt);
+      dustMotes.draw(fxCtx, t);
+      vaporPuff.draw(fxCtx, now);
+      candleFlicker.draw(fxCtx, t);
+      hologramAlcove.draw(fxCtx, now);
+      spiderPatrol.draw(fxCtx, now);
+      orbHover.draw(fxCtx, now);
+      nightShift.update(now);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Main loop
+    // ══════════════════════════════════════════════════════════════════════════
+    let t    = 0;
+    let last = performance.now();
+
+    function frame(now) {
+      const dt = Math.min(now - last, 50);
+      last = now;
+      t   += dt;
+      drawEffects(dt, t, now);
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Debug system — append ?debug to URL to enable
+    // ══════════════════════════════════════════════════════════════════════════
+    const debugMode = location.search.includes('debug');
+    const dbgPanel  = document.getElementById('dbg-panel');
+    const dbgOverlay = document.getElementById('dbg-overlay');
+    let debugPins   = [];
+
+    function updateDebugPanel(text) {
+      dbgPanel.textContent = text;
+    }
+
+    function redrawDebugPins() {
+      dbgCtx.clearRect(0, 0, dbgCanvas.width, dbgCanvas.height);
+      for (let i = 0; i < debugPins.length; i++) {
+        const { px, py } = debugPins[i];
+        const { x, y }   = paintToCanvas(px, py);
+        dbgCtx.save();
+        dbgCtx.strokeStyle = '#0ff';
+        dbgCtx.lineWidth   = 1.5;
+        dbgCtx.beginPath(); dbgCtx.moveTo(x - 10, y); dbgCtx.lineTo(x + 10, y); dbgCtx.stroke();
+        dbgCtx.beginPath(); dbgCtx.moveTo(x, y - 10); dbgCtx.lineTo(x, y + 10); dbgCtx.stroke();
+        dbgCtx.fillStyle   = '#0ff';
+        dbgCtx.font        = '11px monospace';
+        dbgCtx.fillText(`${i+1}: [${px},${py}]`, x + 7, y - 4);
+        dbgCtx.restore();
+      }
+    }
+
+    if (debugMode) {
+      dbgPanel.style.display  = 'block';
+      dbgOverlay.style.display = 'block';
+      updateDebugPanel('Click to pin coordinates. Right-click to clear.');
+
+      dbgOverlay.addEventListener('click', e => {
+        const { px, py } = canvasToPaint(e.clientX, e.clientY);
+        debugPins.push({ px, py });
+        const list = debugPins.map((p, i) => `${i+1}: [${p.px},${p.py}]`).join('\n');
+        updateDebugPanel(`Image: ${imgNaturalW}×${imgNaturalH}\n${list}`);
+        redrawDebugPins();
+        console.log(`Pin ${debugPins.length}: [${px},${py}]`);
+      });
+
+      dbgOverlay.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        debugPins = [];
+        dbgCtx.clearRect(0, 0, dbgCanvas.width, dbgCanvas.height);
+        updateDebugPanel(`Image: ${imgNaturalW}×${imgNaturalH}\nClick to capture paint coords.`);
+      });
+    }
+  </script>
+</body>
+</html>
