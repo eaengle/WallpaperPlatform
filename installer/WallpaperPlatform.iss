@@ -85,11 +85,11 @@ begin
   if not IsDotNet9Installed() then
   begin
     MsgBox(
-      'WallpaperPlatform requires the .NET 9 Windows Desktop Runtime.' + #13#10 +
-      #13#10 +
-      'Please download and install it from:' + #13#10 +
-      'https://dotnet.microsoft.com/download/dotnet/9.0' + #13#10 +
-      #13#10 +
+      'WallpaperPlatform requires the .NET 9 Windows Desktop Runtime.' + Chr(13) + Chr(10) +
+      Chr(13) + Chr(10) +
+      'Please download and install it from:' + Chr(13) + Chr(10) +
+      'https://dotnet.microsoft.com/download/dotnet/9.0' + Chr(13) + Chr(10) +
+      Chr(13) + Chr(10) +
       'Then run this installer again.',
       mbError, MB_OK);
     Result := False;
