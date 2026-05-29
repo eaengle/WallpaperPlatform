@@ -1358,6 +1358,55 @@
     })();
 
     // ══════════════════════════════════════════════════════════════════════════
+    //  Fog Patches — permanent billowing ground mist drifting through the scene.
+    // ══════════════════════════════════════════════════════════════════════════
+    const fogPatches = (() => {
+      // nx/ny: normalized screen center; rNx/rNy: ellipse radii as fraction of W/H;
+      // dax/day: drift amplitude (normalized); dfx/dfy: drift frequency (rad/ms); ph: phase.
+      const PATCHES = [
+        { nx: 0.15, ny: 0.82, rNx: 0.185, rNy: 0.072, ph: 0.00, dax: 0.040, day: 0.014, dfx: 0.000178, dfy: 0.000238, a: 0.340 },
+        { nx: 0.48, ny: 0.75, rNx: 0.205, rNy: 0.090, ph: 2.10, dax: 0.034, day: 0.019, dfx: 0.000212, dfy: 0.000182, a: 0.310 },
+        { nx: 0.82, ny: 0.80, rNx: 0.162, rNy: 0.068, ph: 1.20, dax: 0.030, day: 0.013, dfx: 0.000162, dfy: 0.000255, a: 0.360 },
+        { nx: 0.33, ny: 0.91, rNx: 0.152, rNy: 0.056, ph: 3.80, dax: 0.044, day: 0.011, dfx: 0.000196, dfy: 0.000292, a: 0.320 },
+        { nx: 0.68, ny: 0.70, rNx: 0.138, rNy: 0.082, ph: 0.90, dax: 0.028, day: 0.017, dfx: 0.000242, dfy: 0.000158, a: 0.280 },
+        { nx: 0.24, ny: 0.62, rNx: 0.120, rNy: 0.062, ph: 5.20, dax: 0.026, day: 0.021, dfx: 0.000176, dfy: 0.000214, a: 0.230 },
+        { nx: 0.76, ny: 0.65, rNx: 0.132, rNy: 0.060, ph: 4.48, dax: 0.032, day: 0.015, dfx: 0.000204, dfy: 0.000188, a: 0.250 },
+      ];
+
+      function draw(ctx, t) {
+        const W = window.innerWidth, H = window.innerHeight;
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+        for (const p of PATCHES) {
+          const cx = (p.nx + Math.sin(t * p.dfx + p.ph)        * p.dax) * W;
+          const cy = (p.ny + Math.cos(t * p.dfy + p.ph * 0.78) * p.day) * H;
+          const breathe = 0.56 + 0.28 * Math.sin(t * 0.000124 + p.ph)
+                               + 0.16 * Math.sin(t * 0.000276 + p.ph * 1.55);
+          const alpha = p.a * breathe;
+          if (alpha < 0.008) continue;
+          const rx = p.rNx * W;
+          const ry = p.rNy * H;
+          ctx.save();
+          ctx.translate(cx, cy);
+          ctx.scale(1, ry / rx);
+          const grd = ctx.createRadialGradient(0, 0, 0, 0, 0, rx);
+          grd.addColorStop(0,    `rgba(205,222,218,${Math.min(0.999, alpha * 1.35).toFixed(3)})`);
+          grd.addColorStop(0.40, `rgba(195,215,210,${alpha.toFixed(3)})`);
+          grd.addColorStop(0.72, `rgba(185,208,202,${(alpha * 0.52).toFixed(3)})`);
+          grd.addColorStop(1,    'rgba(175,200,195,0)');
+          ctx.fillStyle = grd;
+          ctx.beginPath();
+          ctx.arc(0, 0, rx, 0, TAU);
+          ctx.fill();
+          ctx.restore();
+        }
+        ctx.restore();
+      }
+
+      return { draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
     //  Draw order
     // ══════════════════════════════════════════════════════════════════════════
     function drawEffects(dt, t, now) {
@@ -1367,6 +1416,7 @@
       sunbeamShift.draw(fxCtx, now);
       serverGlow.draw(fxCtx, t, glitchMul * glowSurge.getMul(now));
       waterfall.draw(fxCtx, t);
+      fogPatches.draw(fxCtx, t);
       cableSpark.draw(fxCtx, now);
       powerArc.draw(fxCtx, now);
       dataDrift.update(dt, now);
