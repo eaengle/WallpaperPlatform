@@ -2,7 +2,7 @@
 
 An open-source Windows desktop wallpaper host that renders animated, event-driven wallpapers using a WebView2 (Chromium) engine embedded behind your desktop icons.
 
-Wallpapers are self-contained HTML/JS/WebGL packages — the same web skills you already have. The platform is free and open-source; premium wallpaper packs are the monetization layer.
+Wallpapers are self-contained HTML/JS/WebGL packages — the same web skills you already have. The platform is free and open-source.
 
 ---
 
@@ -15,7 +15,7 @@ Wallpapers are self-contained HTML/JS/WebGL packages — the same web skills you
 - **System tray** control — switch scenes, trigger events, start/stop the wallpaper, or exit
 - **Start with Windows** — optional startup registry entry managed from the tray; launches in Wait mode so no GPU load hits at login
 - Wallpaper packages defined by a simple `manifest.json`
-- **Weather bridge** — live snow/wind data posted to the active wallpaper every 10 seconds
+- **Weather bridge** — randomised weather conditions (snow intensity, wind) posted to the active wallpaper every 10 seconds
 - **Scene event bridge** — C# fires named events on random schedules; wallpapers react with visual effects
 - **Paint-anchor system** — pin effects to image-pixel coordinates; they scale to any monitor automatically
 
@@ -71,6 +71,8 @@ Trigger Event  ▶
 Stop Wallpaper
 ──────────────────
 ☐ Start with Windows
+──────────────────
+Exit
 ```
 
 **Start Wallpaper / Stop Wallpaper** — activates or deactivates the wallpaper. Stopping returns to Wait mode; the app stays in the tray ready to restart without a full relaunch.
@@ -101,16 +103,11 @@ wallpapers/
   "name": "My Wallpaper",
   "version": "1.0.0",
   "description": "A short description",
-  "tier": "free",
   "events": [
     { "name": "my_event", "label": "My Event", "minSeconds": 60, "maxSeconds": 300 }
   ]
 }
 ```
-
-| Field | Values |
-|---|---|
-| `tier` | `"free"` or `"premium"` |
 
 #### events
 
@@ -166,7 +163,7 @@ WallpaperPlatform/
 └── wallpapers/
     ├── default/                    — built-in starfield wallpaper
     ├── cabin-snow/                 — cabin scene with layered snowfall, chimney smoke,
-    │                                  flickering window glow, twinkling stars, window shadow, owl swoop, and rabbit hop events
+    │                                  flickering window glow, twinkling stars, and 7 events
     └── tech-ruin/                  — jungle-reclaimed server farm with god rays, floating spores,
                                        fireflies, waterfall shimmer, server glow, fog patches, and 18 events
 ```
@@ -220,6 +217,7 @@ The `data` field is optional and event-specific. Built-in events per scene:
 | `window_shadow` | An antlered silhouette appears briefly in a cabin window |
 | `owl_swoop` | An owl swoops in from the left, perches on the tree, then departs |
 | `rabbit_hop` | A rabbit hops in from one side, pauses, then hops out the other side past the boulder |
+| `deer_walk` | A deer walks through the snowy scene |
 
 **tech-ruin** (`wallpapers/tech-ruin/manifest.json`):
 
@@ -261,23 +259,27 @@ window.chrome?.webview?.addEventListener('message', e => {
 
 See `wallpapers/cabin-snow/index.html` for a complete implementation.
 
-### Adding events in C#
+### Adding events
 
-Register events in `MainWindow.OnNavigationCompleted` by passing `EventDef` records to `WallpaperEventBridge`:
+Declare events in your wallpaper's `manifest.json`. The platform reads the manifest at load time and schedules them automatically — no C# changes required.
 
-```csharp
-_events = new WallpaperEventBridge(WebView,
-[
-    new WallpaperEventBridge.EventDef("my_event", TimeSpan.FromMinutes(2), TimeSpan.FromMinutes(10)),
-]);
-_events.Start();
+```json
+{
+  "events": [
+    { "name": "my_event", "label": "My Event", "minSeconds": 60, "maxSeconds": 300 }
+  ]
+}
 ```
 
-You can also fire any event immediately from C# at any time:
+Handle the event in your wallpaper's JavaScript:
 
-```csharp
-_events.PostEvent("my_event");
+```javascript
+function handleSceneEvent(name) {
+  if (name === 'my_event') myEvent.trigger();
+}
 ```
+
+Events declared in the manifest also appear automatically in the **Trigger Event** tray submenu, so they can be fired on demand during development.
 
 ---
 
@@ -366,17 +368,16 @@ dotnet build -c Release -p:DeployInstallDir="C:\MyTestFolder\"
 - [x] Event definitions driven by `manifest.json` (per-wallpaper event schedules)
 - [x] Inno Setup installer with .NET 9 prerequisite check
 - [ ] Multi-monitor support
-- [ ] License key validation for premium wallpaper packs
+- [ ] Settings / picker window
 
 ---
 
 ## Contributing
 
-Free wallpapers are welcome as pull requests. Add your package under `wallpapers/` with a `manifest.json` with `"tier": "free"`.
+Wallpapers are welcome as pull requests. Add your package under `wallpapers/` with a `manifest.json` and an `index.html`.
 
 ---
 
 ## License
 
-Platform: [MIT](LICENSE)  
-Premium wallpaper packages are distributed separately under commercial licenses.
+[MIT](LICENSE)
