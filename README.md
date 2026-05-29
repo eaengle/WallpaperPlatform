@@ -58,6 +58,7 @@ Exit
 ```
 Select Scene   ▶
     ✓ Cabin in Snow
+      Tech Ruin
       Default
 ──────────────────
 Trigger Event  ▶
@@ -164,8 +165,10 @@ WallpaperPlatform/
 │   └── IconGen/                    — .NET console tool that generates app.ico
 └── wallpapers/
     ├── default/                    — built-in starfield wallpaper
-    └── cabin-snow/                 — cabin scene with layered snowfall, chimney smoke,
-                                       flickering window glow, twinkling stars, window shadow, owl swoop, and rabbit hop events
+    ├── cabin-snow/                 — cabin scene with layered snowfall, chimney smoke,
+    │                                  flickering window glow, twinkling stars, window shadow, owl swoop, and rabbit hop events
+    └── tech-ruin/                  — jungle-reclaimed server farm with god rays, floating spores,
+                                       fireflies, amber/green server glow, and bird flythrough events
 ```
 
 ### Windows WorkerW Notes
@@ -205,7 +208,9 @@ Posted by `WallpaperEventBridge` on randomised C# timers, or immediately when tr
 { "type": "event", "name": "shooting_star", "data": null }
 ```
 
-The `data` field is optional and event-specific. Built-in events for the cabin-snow scene (intervals configured in `wallpapers/cabin-snow/manifest.json`):
+The `data` field is optional and event-specific. Built-in events per scene:
+
+**cabin-snow** (`wallpapers/cabin-snow/manifest.json`):
 
 | Event | Effect |
 |---|---|
@@ -215,6 +220,14 @@ The `data` field is optional and event-specific. Built-in events for the cabin-s
 | `window_shadow` | An antlered silhouette appears briefly in a cabin window |
 | `owl_swoop` | An owl swoops in from the left, perches on the tree, then departs |
 | `rabbit_hop` | A rabbit hops in from one side, pauses, then hops out the other side past the boulder |
+
+**tech-ruin** (`wallpapers/tech-ruin/manifest.json`):
+
+| Event | Effect |
+|---|---|
+| `server_glitch` | Server rack LEDs flicker erratically for ~3 seconds |
+| `firefly_surge` | Dozens of fireflies flood the scene and fade over 18 seconds |
+| `bird_fly` | A bird silhouette crosses the sky through the canopy gap |
 
 ### Listening in your wallpaper
 

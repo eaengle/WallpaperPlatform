@@ -9,6 +9,7 @@
     { "name": "cabin_flicker",  "label": "Cabin Flicker",  "minSeconds": 15, "maxSeconds": 25 },
     { "name": "window_shadow",  "label": "Window Shadow",  "minSeconds": 30, "maxSeconds": 120 },
     { "name": "owl_swoop",      "label": "Owl Swoop",      "minSeconds": 30, "maxSeconds": 120 },
-    { "name": "rabbit_hop",     "label": "Rabbit Hop",     "minSeconds": 30, "maxSeconds": 120 }
+    { "name": "rabbit_hop",     "label": "Rabbit Hop",     "minSeconds": 30, "maxSeconds": 120 },
+    { "name": "deer_walk",      "label": "Deer Walk",      "minSeconds": 30, "maxSeconds": 120 }
   ]
 }

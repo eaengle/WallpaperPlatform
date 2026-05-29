@@ -1,0 +1,11 @@
+{
+  "name": "Tech Ruin",
+  "version": "1.0.0",
+  "description": "Jungle-reclaimed server farm glowing with amber and green tech light",
+  "tier": "free",
+  "events": [
+    { "name": "server_glitch",  "label": "Server Glitch",    "minSeconds": 20, "maxSeconds": 45 },
+    { "name": "firefly_surge",  "label": "Firefly Surge",    "minSeconds": 25, "maxSeconds": 50 },
+    { "name": "bird_fly",       "label": "Bird Flythrough",  "minSeconds": 30, "maxSeconds": 65 }
+  ]
+}

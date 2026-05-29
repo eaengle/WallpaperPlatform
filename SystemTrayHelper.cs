@@ -79,6 +79,8 @@ internal sealed class SystemTrayHelper : IDisposable
         menu.Items.Add("Stop Wallpaper", null, (_, _) => StopRequested?.Invoke());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(BuildStartupItem());
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("Exit", null, (_, _) => ExitRequested?.Invoke());
         return menu;
     }
 

@@ -116,6 +116,8 @@
       rabbitGround:          [783, 769],
       rabbitBoulderApproach: [1290, 783],
       rabbitBoulderBottom:   [1348, 836],
+      // Deer foreground ground — null falls back to groundLevel.
+      deerGround: null,
     };
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -186,6 +188,7 @@
         case 'window_shadow':  windowShadow.trigger();   break;
         case 'owl_swoop':      owl.trigger();             break;
         case 'rabbit_hop':     rabbit.trigger();          break;
+        case 'deer_walk':      deer.trigger();            break;
       }
     }
 
@@ -990,6 +993,178 @@
     })();
 
     // ══════════════════════════════════════════════════════════════════════════
+    //  Deer — walks across the foreground snow, pauses mid-scene, walks out.
+    //  dir=1 (L→R): enters at baseGy, dips down around boulder, exits at btm.y.
+    //  dir=-1 (R→L): enters at btm.y, rises after passing boulder, exits at baseGy.
+    //  Arc-length normalization keeps perceived screen speed constant through
+    //  the terrain change so the deer doesn't appear to rush past the boulder.
+    //  Requires deerGround in ANCHORS (falls back to groundLevel).
+    // ══════════════════════════════════════════════════════════════════════════
+    const DEER_WALK_FRAMES = 11;
+    const deer = (() => {
+      const _sprites = {};
+      const _names   = [...Array.from({ length: DEER_WALK_FRAMES }, (_, i) => `walk-${i}`), 'pause'];
+      for (const n of _names) {
+        const img = new Image();
+        img.onload = () => { _sprites[n] = img; };
+        img.src = `deer/${n}.png`;
+      }
+
+      const active = [];
+
+      // Terrain Y for a given screen-x.
+      // dir=1 : slope baseGy→ay, half-sine dip ay→by, flat at by.
+      // dir=-1: flat at by, half-sine rise by→ay, slope ay→baseGy.
+      function terrainY(sx, dir, baseGy, startX, endX) {
+        const apA = ANCHORS.rabbitBoulderApproach, btA = ANCHORS.rabbitBoulderBottom;
+        if (!apA || !btA) return baseGy;
+        const ap = paintToCanvas(...apA), bt = paintToCanvas(...btA);
+        const ax = ap.x, ay = ap.y, bx = bt.x, by = bt.y;
+        const dip = by - ay, arcEnd = bx + (bx - ax);
+
+        if (dir > 0) {
+          if (sx <= ax) {
+            const span = ax - startX;
+            return baseGy + (ay - baseGy) * (span > 0 ? Math.max(0, Math.min(1, (sx - startX) / span)) : 1);
+          }
+          if (sx <= bx) return ay + Math.sin((sx - ax) / (bx - ax) * Math.PI * 0.5) * dip;
+          return by;
+        } else {
+          // Flat at by until the deer passes the boulder's left edge (ax), then rise.
+          if (sx >= ax) return by;
+          const arcWidth = bx - ax;
+          const arcLeft  = ax - arcWidth;
+          if (sx >= arcLeft) {
+            const t = (ax - sx) / arcWidth;  // 0 at ax, 1 at arcLeft
+            return by - Math.sin(t * Math.PI * 0.5) * dip;
+          }
+          const span = endX - arcLeft;
+          return ay + (baseGy - ay) * (span !== 0 ? Math.max(0, Math.min(1, (sx - arcLeft) / span)) : 1);
+        }
+      }
+
+      // Build arc-length lookup: table[i] = cumulative arc fraction at xp = i/N.
+      const LOOKUP_N = 24;
+      function buildLookup(dir, baseGy, startX, endX) {
+        const lens = [0];
+        for (let i = 1; i <= LOOKUP_N; i++) {
+          const xp0 = (i - 1) / LOOKUP_N, xp1 = i / LOOKUP_N;
+          const sx0 = startX + (endX - startX) * xp0;
+          const sx1 = startX + (endX - startX) * xp1;
+          lens.push(lens[i - 1] + Math.hypot(
+            sx1 - sx0,
+            terrainY(sx1, dir, baseGy, startX, endX) - terrainY(sx0, dir, baseGy, startX, endX)
+          ));
+        }
+        const total = lens[LOOKUP_N];
+        return lens.map(l => l / total);
+      }
+
+      // Invert the lookup: arc fraction → xp position.
+      function arcFracToXP(frac, table) {
+        if (frac <= 0) return 0;
+        if (frac >= 1) return 1;
+        let lo = 0, hi = LOOKUP_N;
+        while (lo < hi - 1) {
+          const mid = (lo + hi) >> 1;
+          if (table[mid] <= frac) lo = mid; else hi = mid;
+        }
+        return (lo + (frac - table[lo]) / (table[hi] - table[lo])) / LOOKUP_N;
+      }
+
+      function trigger() {
+        const anchor = ANCHORS.deerGround || ANCHORS.groundLevel;
+        if (!anchor || active.length > 0) return;
+        active.push({ t0: performance.now(), dir: Math.random() < 0.5 ? 1 : -1, lookup: null });
+      }
+
+      function draw(ctx, now) {
+        if (!active.length || !imgNaturalW) return;
+        const anchor = ANCHORS.deerGround || ANCHORS.groundLevel;
+        if (!anchor) return;
+
+        const a  = active[0];
+        const et = (now - a.t0) / 1000;
+        const dur = 20;
+        if (et >= dur) { active.shift(); return; }
+
+        const W = window.innerWidth, H = window.innerHeight;
+        const ground  = paintToCanvas(...anchor);
+        const sz      = Math.min(W, H) * 0.0644;
+        const baseGy  = ground.y + Math.min(W, H) * 0.037;
+        const margin  = sz * 1.5;
+        const startX  = a.dir > 0 ? -margin : W + margin;
+        const endX    = a.dir > 0 ? W + margin : -margin;
+
+        // Compute arc-length lookup on first draw of this event
+        if (!a.lookup) a.lookup = buildLookup(a.dir, baseGy, startX, endX);
+        const table   = a.lookup;
+        const midFrac = table[LOOKUP_N >> 1];  // arc fraction at spatial midpoint (xp=0.5)
+
+        const p  = et / dur;
+        const ps = 0.40, pe = 0.58;
+        const pausing = p >= ps && p < pe;
+
+        // Arc-length-normalized xp: deer moves at constant screen speed through terrain changes
+        let xp;
+        if (p < ps) {
+          xp = arcFracToXP(p / ps * midFrac, table);
+        } else if (pausing) {
+          xp = 0.5;
+        } else {
+          xp = arcFracToXP(midFrac + (p - pe) / (1 - pe) * (1 - midFrac), table);
+        }
+
+        const dx = startX + (endX - startX) * xp;
+        const gy = terrainY(dx, a.dir, baseGy, startX, endX);
+        const fa = p < 0.07 ? p / 0.07 : p > 0.93 ? (1 - p) / 0.07 : 1;
+
+        const walkTime = pausing ? ps * dur : et;
+        const frameIdx = Math.floor(walkTime * (4.6 / TAU) * DEER_WALK_FRAMES) % DEER_WALK_FRAMES;
+        const frame    = pausing ? (_sprites['pause'] || _sprites['walk-0'])
+                                 : _sprites[`walk-${frameIdx}`];
+        if (!frame) return;
+
+        const drawH  = sz * 1.2;
+        const drawW  = drawH * (frame.naturalWidth / frame.naturalHeight);
+        const FOOT_X = 0.50, FOOT_Y = 0.92;
+        const wc     = pausing ? 0 : et * 4.6;
+        const bob    = pausing ? 0 : Math.abs(Math.cos(wc)) * sz * 0.028;
+
+        ctx.save();
+        ctx.globalAlpha = fa;
+        ctx.translate(dx, gy);
+        if (a.dir < 0) ctx.scale(-1, 1);
+        ctx.translate(0, -bob);
+        ctx.drawImage(frame, -drawW * FOOT_X, -drawH * FOOT_Y, drawW, drawH);
+
+        if (pausing) {
+          const bAge  = et - ps * dur;
+          const bFade = Math.min(1, bAge / 0.55);
+          const noseX = drawW * 0.38;
+          const noseY = -drawH * 0.55;
+          const breathAngle = -0.35;
+          for (let i = 0; i < 3; i++) {
+            const bp = ((now * 0.00062 + i * 0.42) % 1.5) * bFade;
+            ctx.globalAlpha = fa * (1 - bp / 1.5) * 0.28 * bFade;
+            ctx.fillStyle = '#cce4f3';
+            ctx.beginPath();
+            ctx.arc(
+              noseX + Math.cos(breathAngle) * bp * sz * 0.25,
+              noseY + Math.sin(breathAngle) * bp * sz * 0.25,
+              sz * 0.025 + bp * sz * 0.050, 0, TAU
+            );
+            ctx.fill();
+          }
+        }
+
+        ctx.restore();
+      }
+
+      return { trigger, draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
     //  Effects layer — draw order: stars → owl → shadow → glow → smoke
     //  Shadow is drawn BEFORE the window glow so the amber light overlays it,
     //  making the figure look like it's inside the cabin behind the glass.
@@ -1001,6 +1176,7 @@
       shootingStar.draw(fxCtx, performance.now());
       owl.draw(fxCtx, performance.now());
       rabbit.draw(fxCtx, performance.now());
+      deer.draw(fxCtx, performance.now());
       windowShadow.draw(fxCtx, performance.now());
       windowGlow.draw(fxCtx, t);
       smoke.update(dt, t);

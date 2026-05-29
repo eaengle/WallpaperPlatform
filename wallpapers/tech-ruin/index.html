@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #080b04; }
+    #bg {
+      position: fixed;
+      inset: 0;
+      background: url('tech_ruin.png') center / cover no-repeat;
+    }
+    #effects, #dbg-canvas {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+    }
+    #dbg-overlay {
+      position: fixed;
+      inset: 0;
+      cursor: crosshair;
+      z-index: 9000;
+      display: none;
+    }
+    #dbg-panel {
+      position: fixed;
+      top: 8px;
+      left: 8px;
+      background: rgba(0,0,0,0.72);
+      color: #0f0;
+      font: 12px/1.6 monospace;
+      padding: 8px 10px;
+      border-radius: 4px;
+      z-index: 9999;
+      pointer-events: none;
+      display: none;
+      max-width: 420px;
+      white-space: pre;
+    }
+  </style>
+</head>
+<body>
+  <div id="bg"></div>
+  <canvas id="effects"></canvas>
+  <canvas id="dbg-canvas"></canvas>
+  <div id="dbg-overlay"></div>
+  <div id="dbg-panel"></div>
+
+  <script>
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Image-anchor system — same as cabin-snow.
+    //  paintToCanvas(px, py) converts original image-pixel coords → screen coords.
+    // ══════════════════════════════════════════════════════════════════════════
+    let imgNaturalW = 0, imgNaturalH = 0;
+
+    const _probe = new Image();
+    _probe.onload = () => {
+      imgNaturalW = _probe.naturalWidth;
+      imgNaturalH = _probe.naturalHeight;
+      if (debugMode) updateDebugPanel(`Image: ${imgNaturalW}×${imgNaturalH}\nClick to capture paint coords.`);
+    };
+    _probe.src = 'tech_ruin.png';
+
+    function coverScale() {
+      const W = window.innerWidth, H = window.innerHeight;
+      const s = Math.max(W / imgNaturalW, H / imgNaturalH);
+      return { s, ox: (W - imgNaturalW * s) / 2, oy: (H - imgNaturalH * s) / 2 };
+    }
+    function paintToCanvas(px, py) {
+      if (!imgNaturalW) return { x: px, y: py };
+      const { s, ox, oy } = coverScale();
+      return { x: px * s + ox, y: py * s + oy };
+    }
+    function canvasToPaint(sx, sy) {
+      if (!imgNaturalW) return { px: 0, py: 0 };
+      const { s, ox, oy } = coverScale();
+      return { px: Math.round((sx - ox) / s), py: Math.round((sy - oy) / s) };
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Anchor definitions — measure with ?debug, then fill in exact values.
+    //  Current value is a rough visual estimate from the 1672×941 image.
+    // ══════════════════════════════════════════════════════════════════════════
+    const ANCHORS = {
+      serverCenter: [545, 460],   // center of server rack cluster — refine with ?debug
+    };
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Canvas setup
+    // ══════════════════════════════════════════════════════════════════════════
+    const fxCanvas  = document.getElementById('effects');
+    const dbgCanvas = document.getElementById('dbg-canvas');
+    const fxCtx     = fxCanvas.getContext('2d');
+    const dbgCtx    = dbgCanvas.getContext('2d');
+
+    function resize() {
+      const W = window.innerWidth, H = window.innerHeight;
+      fxCanvas.width = dbgCanvas.width   = W;
+      fxCanvas.height = dbgCanvas.height = H;
+    }
+    resize();
+    window.addEventListener('resize', () => { resize(); spores.init(); fireflies.init(); redrawDebugPins(); });
+
+    function rnd(a, b)        { return a + Math.random() * (b - a); }
+    function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+    const TAU = Math.PI * 2;
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Event state
+    // ══════════════════════════════════════════════════════════════════════════
+    let glitchTimer = 0;
+    let glitchMul   = 1;   // multiplied into server LED brightness
+
+    function triggerServerGlitch() { glitchTimer = 3200; }
+
+    function handleSceneEvent(name) {
+      switch (name) {
+        case 'server_glitch': triggerServerGlitch();    break;
+        case 'firefly_surge': fireflies.triggerSurge(); break;
+        case 'bird_fly':      bird.trigger();           break;
+      }
+    }
+
+    window.chrome?.webview?.addEventListener('message', e => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'event') handleSceneEvent(msg.name, msg.data);
+      } catch {}
+    });
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  God rays — warm light shafts piercing the jungle canopy.
+    //  Screen-relative positioning is fine here; these don't pin to image features.
+    // ══════════════════════════════════════════════════════════════════════════
+    const godRays = (() => {
+      // Each shaft: nx = normalised screen-x origin, angle (rad), pulse phase
+      const shafts = [
+        { nx: 0.36, angle:  0.12, phase: 0.00 },
+        { nx: 0.48, angle:  0.02, phase: 1.40 },
+        { nx: 0.56, angle: -0.06, phase: 2.70 },
+        { nx: 0.42, angle:  0.20, phase: 0.75 },
+        { nx: 0.53, angle: -0.15, phase: 4.10 },
+      ];
+
+      function draw(ctx, t) {
+        const W = window.innerWidth, H = window.innerHeight;
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+
+        for (const sh of shafts) {
+          const ox  = sh.nx * W;
+          const oy  = H * 0.01;
+          const len = H * 1.28;
+          const rw  = W * (0.055 + 0.025 * Math.sin(t * 0.00038 + sh.phase));
+
+          const pulse = 0.56 + 0.26 * Math.sin(t * 0.00026 + sh.phase)
+                             + 0.12 * Math.sin(t * 0.00088 + sh.phase * 1.6)
+                             + 0.06 * Math.sin(t * 0.00210 + sh.phase * 2.4);
+
+          const ex   = ox + Math.sin(sh.angle) * len;
+          const ey   = oy + Math.cos(sh.angle) * len;
+          const perp = sh.angle + Math.PI / 2;
+          const phx  = Math.cos(perp) * rw * 0.5;
+          const phy  = Math.sin(perp) * rw * 0.5;
+
+          const grad = ctx.createLinearGradient(ox, oy, ex, ey);
+          const a0   = 0.050 * pulse;
+          const a1   = 0.017 * pulse;
+          grad.addColorStop(0,    `rgba(255,238,165,${a0.toFixed(3)})`);
+          grad.addColorStop(0.38, `rgba(255,222,125,${a1.toFixed(3)})`);
+          grad.addColorStop(1,    'rgba(230,200, 85,0)');
+
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.moveTo(ox - phx * 0.12, oy - phy * 0.12);
+          ctx.lineTo(ox + phx * 0.12, oy + phy * 0.12);
+          ctx.lineTo(ex + phx, ey + phy);
+          ctx.lineTo(ex - phx, ey - phy);
+          ctx.closePath();
+          ctx.fill();
+        }
+
+        ctx.restore();
+      }
+
+      return { draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Server glow — pulsing amber + green light from the server rack cluster.
+    //  Gated on ANCHORS.serverCenter being non-null.
+    // ══════════════════════════════════════════════════════════════════════════
+    const serverGlow = (() => {
+      function draw(ctx, t, mul) {
+        if (!ANCHORS.serverCenter || !imgNaturalW) return;
+        const C  = paintToCanvas(...ANCHORS.serverCenter);
+        const { s } = coverScale();
+        const R  = 160 * s;
+
+        // Multi-frequency amber pulse — incommensurate freqs create organic feel
+        const pulse = (0.52
+          + 0.22 * Math.sin(t * 0.00084)
+          + 0.15 * Math.sin(t * 0.00213)
+          + 0.09 * Math.sin(t * 0.00641)
+          + 0.02 * Math.sin(t * 0.01480)
+        ) * mul;
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+
+        // Warm amber core — the main server heat glow
+        const ga  = 0.090 * pulse;
+        const amb = ctx.createRadialGradient(C.x, C.y, 0, C.x, C.y, R * 2.5);
+        amb.addColorStop(0,    `rgba(255,165, 50,${Math.min(0.999, ga * 2.3).toFixed(3)})`);
+        amb.addColorStop(0.22, `rgba(238,135, 38,${(ga * 1.5).toFixed(3)})`);
+        amb.addColorStop(0.50, `rgba(180, 85, 18,${ga.toFixed(3)})`);
+        amb.addColorStop(0.80, `rgba(105, 48,  8,${(ga * 0.22).toFixed(3)})`);
+        amb.addColorStop(1,    'rgba( 65, 22,  2,0)');
+        ctx.fillStyle = amb;
+        ctx.beginPath();
+        ctx.arc(C.x, C.y, R * 2.5, 0, TAU);
+        ctx.fill();
+
+        // Cool green accent — active cooling/indicator systems still running
+        const gp  = Math.max(0, 0.38 + 0.32 * Math.sin(t * 0.00342 + 1.18)) * mul;
+        const ga2 = 0.040 * gp;
+        const gcx = C.x - R * 0.30;
+        const grn = ctx.createRadialGradient(gcx, C.y, 0, gcx, C.y, R * 0.92);
+        grn.addColorStop(0,    `rgba( 80,255,118,${(ga2 * 2.2).toFixed(3)})`);
+        grn.addColorStop(0.42, `rgba( 45,195, 72,${ga2.toFixed(3)})`);
+        grn.addColorStop(1,    'rgba(  0, 88, 25,0)');
+        ctx.fillStyle = grn;
+        ctx.beginPath();
+        ctx.arc(gcx, C.y, R * 0.92, 0, TAU);
+        ctx.fill();
+
+        ctx.restore();
+      }
+
+      return { draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Spore / dust particles — organic motes drifting upward in the god rays.
+    // ══════════════════════════════════════════════════════════════════════════
+    const spores = (() => {
+      const COUNT = 80;
+      let pts = [];
+
+      function make(startY) {
+        const W = window.innerWidth, H = window.innerHeight;
+        return {
+          x:     rnd(0, W),
+          y:     startY ?? rnd(0, H),
+          vy:    rnd(-0.20, -0.56),
+          vx:    rnd(-0.06, 0.06),
+          r:     rnd(0.8, 2.5),
+          phase: rnd(0, TAU),
+          freq:  rnd(0.00090, 0.00265),   // rad/ms
+          op:    rnd(0.12, 0.42),
+          warm:  Math.random() < 0.72,
+        };
+      }
+
+      function init() {
+        const H = window.innerHeight;
+        pts = Array.from({ length: COUNT }, () => make(rnd(0, H)));
+      }
+
+      function update(dt, t) {
+        const W = window.innerWidth, H = window.innerHeight;
+        const step = dt / 16.667;
+        for (const p of pts) {
+          p.x += (p.vx + Math.sin(t * p.freq + p.phase) * 0.50) * step;
+          p.y += p.vy * step;
+          if (p.y < -12) { Object.assign(p, make(H + 8)); }
+          if (p.x < -12) p.x = W + 12;
+          if (p.x > W + 12) p.x = -12;
+        }
+      }
+
+      function draw(ctx, t) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+
+        for (const p of pts) {
+          const twinkle = 0.55 + 0.30 * Math.sin(t * p.freq * 3.2 + p.phase)
+                               + 0.15 * Math.sin(t * p.freq * 7.8 + p.phase * 1.7);
+          const alpha = p.op * twinkle;
+          if (alpha < 0.015) continue;
+
+          const [r, g, b] = p.warm ? [255, 230, 150] : [190, 255, 168];
+          const gR  = p.r * 3.8;
+          const grd = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, gR);
+          grd.addColorStop(0,   `rgba(${r},${g},${b},${Math.min(0.999, alpha * 1.9).toFixed(3)})`);
+          grd.addColorStop(0.5, `rgba(${r},${g},${b},${alpha.toFixed(3)})`);
+          grd.addColorStop(1,   `rgba(${r},${g},${b},0)`);
+          ctx.fillStyle = grd;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, gR, 0, TAU);
+          ctx.fill();
+        }
+
+        ctx.restore();
+      }
+
+      init();
+      return { init, update, draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Fireflies — ambient blinking lights in the jungle undergrowth.
+    //  triggerSurge() floods the scene with extra fireflies for 18 seconds.
+    // ══════════════════════════════════════════════════════════════════════════
+    const fireflies = (() => {
+      const AMB_COUNT   = 18;
+      const SURGE_COUNT = 58;
+      const SURGE_DUR   = 18000;   // ms — how long surge lasts at peak
+      const SURGE_FADE  = 2800;    // ms — fade-in and fade-out ramp
+
+      let ambient = [];
+      let surge   = [];
+      let surgeT0 = -Infinity;
+
+      function makeFF(nyLo, nyHi) {
+        const W = window.innerWidth, H = window.innerHeight;
+        return {
+          x:    rnd(W * 0.04, W * 0.96),
+          y:    rnd(H * nyLo, H * nyHi),
+          vx:   rnd(-0.20, 0.20),
+          vy:   rnd(-0.12, 0.12),
+          ax:   rnd(-0.0038, 0.0038),
+          ay:   rnd(-0.0026, 0.0026),
+          ph:   rnd(0, TAU),
+          freq: rnd(0.0028, 0.0082),   // rad/ms → period ~0.75–2.2s
+          r:    rnd(3.5, 9.0),
+          warm: Math.random() < 0.56,  // yellow vs green
+        };
+      }
+
+      function init() {
+        ambient = Array.from({ length: AMB_COUNT }, () => makeFF(0.28, 0.90));
+      }
+
+      function triggerSurge() {
+        surgeT0 = performance.now();
+        surge   = Array.from({ length: SURGE_COUNT }, () => makeFF(0.18, 0.93));
+      }
+
+      function update(dt, now) {
+        const W = window.innerWidth, H = window.innerHeight;
+        const step = dt / 16.667;
+        const all  = [...ambient];
+        if (now - surgeT0 < SURGE_DUR + SURGE_FADE) all.push(...surge);
+
+        for (const f of all) {
+          f.vx += (f.ax + rnd(-0.002, 0.002)) * step;
+          f.vy += (f.ay + rnd(-0.001, 0.001)) * step;
+          f.vx  = clamp(f.vx, -0.30, 0.30);
+          f.vy  = clamp(f.vy, -0.20, 0.20);
+          f.x  += f.vx * step;
+          f.y  += f.vy * step;
+
+          if (f.x < -40) f.x = W + 40;
+          if (f.x > W + 40) f.x = -40;
+          if (f.y < H * 0.12) f.vy =  Math.abs(f.vy) * 0.5;
+          if (f.y > H * 0.97) f.vy = -Math.abs(f.vy) * 0.5;
+        }
+      }
+
+      function draw(ctx, t, now) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+
+        const surgeAge = now - surgeT0;
+        const surgeA   = clamp(
+          Math.min(surgeAge / SURGE_FADE, 1) * Math.max(0, 1 - (surgeAge - SURGE_DUR) / SURGE_FADE),
+          0, 1
+        );
+
+        const sets = [{ list: ambient, fa: 1 }];
+        if (surgeA > 0.005) sets.push({ list: surge, fa: surgeA });
+
+        for (const { list, fa } of sets) {
+          for (const f of list) {
+            // Half-rectified sine: firefly is truly off when below zero (not just dim)
+            const blink = Math.max(0, Math.sin(t * f.freq + f.ph));
+            const alpha = blink * blink * 0.88 * fa;
+            if (alpha < 0.018) continue;
+
+            const [r, g, b] = f.warm ? [255, 228, 72] : [112, 255, 90];
+            const gR = f.r * (3.0 + blink * 3.2);
+
+            const grd = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, gR);
+            grd.addColorStop(0,    `rgba(${r},${g},${b},${Math.min(0.999, alpha * 2.6).toFixed(3)})`);
+            grd.addColorStop(0.28, `rgba(${r},${g},${b},${(alpha * 1.0).toFixed(3)})`);
+            grd.addColorStop(1,    `rgba(${r},${g},${b},0)`);
+            ctx.fillStyle = grd;
+            ctx.beginPath();
+            ctx.arc(f.x, f.y, gR, 0, TAU);
+            ctx.fill();
+
+            // Hard bright center
+            ctx.fillStyle = `rgba(${r},${g},${b},${Math.min(0.999, alpha).toFixed(3)})`;
+            ctx.beginPath();
+            ctx.arc(f.x, f.y, f.r * 0.35, 0, TAU);
+            ctx.fill();
+          }
+        }
+
+        ctx.restore();
+      }
+
+      init();
+      return { init, update, draw, triggerSurge };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Bird flythrough — silhouette crosses the sky through the canopy gap.
+    // ══════════════════════════════════════════════════════════════════════════
+    const bird = (() => {
+      const DUR    = 7500;   // ms total crossing time
+      const active = [];
+
+      function trigger() {
+        if (active.length > 0) return;
+        active.push({ t0: performance.now(), dir: Math.random() < 0.5 ? 1 : -1 });
+      }
+
+      // Draws a bird silhouette centred at (0,0), facing right.
+      // Flip ctx with scale(-1,1) before calling for leftward flight.
+      function drawSilhouette(ctx, sz, wAngle) {
+        ctx.fillStyle = 'rgba(18,12,7,0.90)';
+
+        ctx.beginPath();
+        ctx.ellipse(0, 0, sz * 0.30, sz * 0.10, 0, 0, TAU);
+        ctx.fill();
+
+        // Tail
+        ctx.beginPath();
+        ctx.moveTo(-sz * 0.26,  sz * 0.02);
+        ctx.lineTo(-sz * 0.54,  sz * 0.12);
+        ctx.lineTo(-sz * 0.29,  sz * 0.14);
+        ctx.closePath();
+        ctx.fill();
+
+        // Head
+        ctx.beginPath();
+        ctx.arc(sz * 0.30, -sz * 0.02, sz * 0.10, 0, TAU);
+        ctx.fill();
+
+        // Left wing — rotates around shoulder
+        ctx.save();
+        ctx.rotate(wAngle * 0.46);
+        ctx.beginPath();
+        ctx.moveTo(-sz * 0.04, -sz * 0.02);
+        ctx.quadraticCurveTo(-sz * 0.62, -sz * (0.44 * (wAngle + 0.20) + 0.02), -sz * 1.06, sz * 0.04);
+        ctx.quadraticCurveTo(-sz * 0.52,  sz * 0.09, -sz * 0.04, sz * 0.04);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+
+        // Right wing
+        ctx.save();
+        ctx.rotate(-wAngle * 0.46);
+        ctx.beginPath();
+        ctx.moveTo(sz * 0.04, -sz * 0.02);
+        ctx.quadraticCurveTo(sz * 0.62, -sz * (0.44 * (wAngle + 0.20) + 0.02), sz * 1.06, sz * 0.04);
+        ctx.quadraticCurveTo(sz * 0.52,  sz * 0.09, sz * 0.04, sz * 0.04);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+
+      function draw(ctx, now) {
+        if (!active.length) return;
+        const a  = active[0];
+        const et = now - a.t0;
+        if (et >= DUR) { active.shift(); return; }
+
+        const p  = et / DUR;
+        const W  = window.innerWidth, H = window.innerHeight;
+
+        const fadeIn  = p < 0.08 ? p / 0.08 : 1;
+        const fadeOut = p > 0.90 ? (1 - p) / 0.10 : 1;
+
+        const startX = a.dir > 0 ? -90 : W + 90;
+        const endX   = a.dir > 0 ? W + 90 : -90;
+        const cx     = startX + (endX - startX) * p;
+
+        // Gentle undulating arc through upper 25% of screen
+        const skyH = H * 0.25;
+        const cy   = skyH * (0.42 + 0.18 * Math.sin(p * Math.PI * 1.05 - 0.25));
+
+        // ~3 Hz wing beat
+        const wAngle = Math.sin(et * 0.01885);
+        const sz     = Math.min(W, H) * 0.021;
+
+        ctx.save();
+        ctx.globalAlpha = fadeIn * fadeOut;
+        ctx.translate(cx, cy);
+        if (a.dir < 0) ctx.scale(-1, 1);
+        drawSilhouette(ctx, sz, wAngle);
+        ctx.restore();
+      }
+
+      return { trigger, draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Draw order: god rays → server glow → spores → fireflies → bird
+    // ══════════════════════════════════════════════════════════════════════════
+    function drawEffects(dt, t, now) {
+      fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
+
+      godRays.draw(fxCtx, t);
+      serverGlow.draw(fxCtx, t, glitchMul);
+      spores.update(dt, t);
+      spores.draw(fxCtx, t);
+      fireflies.update(dt, now);
+      fireflies.draw(fxCtx, t, now);
+      bird.draw(fxCtx, now);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Main loop
+    // ══════════════════════════════════════════════════════════════════════════
+    let t    = 0;
+    let last = performance.now();
+
+    function frame(now) {
+      const dt = Math.min(now - last, 50);
+      last = now;
+      t   += dt;
+
+      if (glitchTimer > 0) {
+        glitchTimer -= dt;
+        glitchMul = Math.random() < 0.28
+          ? 0.04 + Math.random() * 0.12
+          : 0.55 + Math.random() * 0.45;
+        if (glitchTimer <= 0) { glitchTimer = 0; glitchMul = 1; }
+      }
+
+      drawEffects(dt, t, now);
+      requestAnimationFrame(frame);
+    }
+
+    requestAnimationFrame(frame);
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Debug mode — append ?debug to URL to activate.
+    //  Click anywhere to capture image-pixel coordinates for ANCHORS.
+    //  Right-click to clear pins.
+    // ══════════════════════════════════════════════════════════════════════════
+    const debugMode  = new URLSearchParams(location.search).has('debug');
+    const dbgPanel   = document.getElementById('dbg-panel');
+    const dbgOverlay = document.getElementById('dbg-overlay');
+    const debugPins  = [];
+
+    function updateDebugPanel(msg) { dbgPanel.textContent = msg; }
+
+    function redrawDebugPins() {
+      if (!debugMode) return;
+      dbgCtx.clearRect(0, 0, dbgCanvas.width, dbgCanvas.height);
+      dbgCtx.font = '11px monospace';
+      dbgCtx.lineWidth = 1;
+      for (const p of debugPins) {
+        const { x, y } = paintToCanvas(p.px, p.py);
+        dbgCtx.strokeStyle = 'rgba(255,0,220,0.85)';
+        dbgCtx.beginPath();
+        dbgCtx.moveTo(x - 10, y); dbgCtx.lineTo(x + 10, y);
+        dbgCtx.moveTo(x, y - 10); dbgCtx.lineTo(x, y + 10);
+        dbgCtx.stroke();
+        dbgCtx.fillStyle = 'rgba(255,0,220,0.9)';
+        dbgCtx.beginPath(); dbgCtx.arc(x, y, 3, 0, TAU); dbgCtx.fill();
+        const label = p.label || `(${p.px},${p.py})`;
+        dbgCtx.fillStyle = 'rgba(0,0,0,0.6)';
+        dbgCtx.fillRect(x + 6, y - 14, label.length * 6.5 + 6, 16);
+        dbgCtx.fillStyle = '#0f0';
+        dbgCtx.fillText(label, x + 9, y - 2);
+      }
+    }
+
+    if (debugMode) {
+      dbgPanel.style.display   = 'block';
+      dbgOverlay.style.display = 'block';
+      updateDebugPanel(imgNaturalW
+        ? `Image: ${imgNaturalW}×${imgNaturalH}\nClick to capture paint coords.`
+        : 'Loading image dimensions…');
+      let pinCount = 0;
+      dbgOverlay.addEventListener('click', e => {
+        if (!imgNaturalW) { updateDebugPanel('Image not loaded yet — wait a moment.'); return; }
+        const { px, py } = canvasToPaint(e.clientX, e.clientY);
+        pinCount++;
+        const label = `${pinCount}: (${px},${py})`;
+        debugPins.push({ px, py, label });
+        console.log(`[debug] pin ${pinCount}: [${px}, ${py}]`);
+        updateDebugPanel(
+          `Image: ${imgNaturalW}×${imgNaturalH}  Screen: ${window.innerWidth}×${window.innerHeight}\n` +
+          `Last click: [${px}, ${py}]  (pin ${pinCount})\n\n` +
+          debugPins.map(p => `  ${p.label}`).join('\n')
+        );
+        redrawDebugPins();
+      });
+      dbgOverlay.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        debugPins.length = 0;
+        pinCount = 0;
+        dbgCtx.clearRect(0, 0, dbgCanvas.width, dbgCanvas.height);
+        updateDebugPanel(`Image: ${imgNaturalW}×${imgNaturalH}\nPins cleared. Click to capture.`);
+      });
+    }
+  </script>
+</body>
+</html>
