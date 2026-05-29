@@ -1078,8 +1078,8 @@
         if (alpha < 0.01) return;
         const m = monRect();
         ctx.save();
-        ctx.globalAlpha = alpha * 0.80;
-        ctx.fillStyle   = 'rgba(0,0,0,0.72)';
+        ctx.globalAlpha = alpha * 0.28;
+        ctx.fillStyle   = 'rgba(0,0,0,0.35)';
         ctx.fillRect(m.x, m.y, m.w, m.h);
         const cols = 26, rows = 18;
         const cw = m.w / cols, ch = m.h / rows;
@@ -1150,8 +1150,37 @@
         ctx.restore();
       }
 
+      function drawBase(ctx, now) {
+        // Fade base out as events fade in so smears bleed through during events
+        let maxEvAlpha = 0;
+        const check = (t0, dur, inF, outF) => {
+          const age = now - t0;
+          if (age < 0 || age >= dur) return;
+          const p = age / dur;
+          maxEvAlpha = Math.max(maxEvAlpha, Math.min(p / inF, 1) * Math.min(1, (1 - p) / outF));
+        };
+        check(staticT0,  4200, 0.18, 0.15);
+        check(messageT0, 3000, 0.12, 0.18);
+        check(scannerT0, 3200, 0.12, 0.15);
+        const baseAlpha = (1 - maxEvAlpha) * 0.82;
+        if (baseAlpha < 0.01) return;
+        const m = monRect();
+        ctx.save();
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.fillStyle = `rgba(4,10,6,${baseAlpha.toFixed(3)})`;
+        ctx.fillRect(m.x, m.y, m.w, m.h);
+        ctx.globalCompositeOperation = 'screen';
+        const grd = ctx.createRadialGradient(m.cx, m.cy, 0, m.cx, m.cy, m.w * 0.6);
+        grd.addColorStop(0, `rgba(30,80,40,${(0.12 * (1 - maxEvAlpha)).toFixed(3)})`);
+        grd.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = grd;
+        ctx.beginPath(); ctx.ellipse(m.cx, m.cy, m.w * 0.6, m.h * 0.55, 0, 0, TAU); ctx.fill();
+        ctx.restore();
+      }
+
       function draw(ctx, now) {
         if (!ANCHORS.monitorScreen || !imgNaturalW) return;
+        drawBase(ctx, now);
         drawStatic(ctx, now);
         drawMessage(ctx, now);
         drawScanner(ctx, now);
