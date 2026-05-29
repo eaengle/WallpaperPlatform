@@ -61,22 +61,19 @@ Filename: "reg.exe"; \
   RunOnceId: "RemoveStartupEntry"
 
 [Code]
-// Check for .NET 9 Desktop Runtime before installing
+// Check for .NET 9 Desktop Runtime by looking for a 9.x install folder
 function IsDotNet9Installed(): Boolean;
 var
-  key:   String;
-  names: TArrayOfString;
-  i:     Integer;
+  FindRec:  TFindRec;
+  BasePath: String;
 begin
-  Result := False;
-  key := 'SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.WindowsDesktop.App';
-  if RegGetValueNames(HKLM, key, names) then
-    for i := 0 to GetArrayLength(names) - 1 do
-      if Pos('9.', names[i]) = 1 then
-      begin
-        Result := True;
-        Exit;
-      end;
+  Result   := False;
+  BasePath := ExpandConstant('{commonpf64}\dotnet\shared\Microsoft.WindowsDesktop.App');
+  if FindFirst(BasePath + '\9.*', FindRec) then
+  begin
+    Result := (FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0;
+    FindClose(FindRec);
+  end;
 end;
 
 function InitializeSetup(): Boolean;
