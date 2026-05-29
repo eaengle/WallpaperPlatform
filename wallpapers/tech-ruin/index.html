@@ -250,21 +250,31 @@
     //  Clip polygon traces around the bush at the base.
     // ══════════════════════════════════════════════════════════════════════════
     const waterfall = (() => {
-      const THREADS = 14;
+      const THREADS = 18;
       const threads = Array.from({ length: THREADS }, (_, i) => ({
         t:     (i + 0.5) / THREADS,
         phase: rnd(0, TAU),
-        speed: rnd(0.00022, 0.00046),
-        alpha: rnd(0.08, 0.20),
+        speed: rnd(0.00026, 0.00054),
+        alpha: rnd(0.16, 0.36),
         wFreq: rnd(0.00014, 0.00030),
         wAmp:  rnd(0.4, 1.0),
       }));
       // Mist split into left-of-bush and right-of-bush pools
-      const mistL = Array.from({ length: 4 }, () => ({
-        t: rnd(0, 1), phase: rnd(0, TAU), r: rnd(5, 13), alpha: rnd(0.05, 0.12),
+      const mistL = Array.from({ length: 5 }, () => ({
+        t: rnd(0, 1), phase: rnd(0, TAU), r: rnd(7, 16), alpha: rnd(0.09, 0.18),
       }));
-      const mistR = Array.from({ length: 6 }, () => ({
-        t: rnd(0, 1), phase: rnd(0, TAU), r: rnd(5, 15), alpha: rnd(0.05, 0.13),
+      const mistR = Array.from({ length: 7 }, () => ({
+        t: rnd(0, 1), phase: rnd(0, TAU), r: rnd(9, 20), alpha: rnd(0.10, 0.20),
+      }));
+      // Billowing mist at the plunge pool — large slow blobs outside the clip region
+      const billow = Array.from({ length: 6 }, () => ({
+        t:         rnd(0.05, 0.95),
+        phase:     rnd(0, TAU),
+        rBase:     rnd(30, 55),
+        rVar:      rnd(10, 20),
+        alpha:     rnd(0.09, 0.16),
+        driftAmp:  rnd(5, 12),
+        driftFreq: rnd(0.00018, 0.00036),
       }));
 
       function lerp(a, b, f) { return a + (b - a) * f; }
@@ -276,12 +286,13 @@
         if (a < 0.006) return;
         const sc = coverScale().s;
         const r  = m.r * sc;
-        const grd = ctx.createRadialGradient(bx, by, 0, bx, by, r * 2.0);
-        grd.addColorStop(0,    `rgba(205,240,255,${Math.min(0.99, a * 1.5).toFixed(3)})`);
-        grd.addColorStop(0.45, `rgba(188,228,255,${a.toFixed(3)})`);
+        const grd = ctx.createRadialGradient(bx, by, 0, bx, by, r * 2.6);
+        grd.addColorStop(0,    `rgba(225,250,255,${Math.min(0.99, a * 1.9).toFixed(3)})`);
+        grd.addColorStop(0.40, `rgba(205,242,255,${Math.min(0.99, a * 1.2).toFixed(3)})`);
+        grd.addColorStop(0.70, `rgba(188,230,255,${a.toFixed(3)})`);
         grd.addColorStop(1,    'rgba(165,215,255,0)');
         ctx.fillStyle = grd;
-        ctx.beginPath(); ctx.arc(bx, by, r * 2.0, 0, TAU); ctx.fill();
+        ctx.beginPath(); ctx.arc(bx, by, r * 2.6, 0, TAU); ctx.fill();
       }
 
       function draw(ctx, t) {
@@ -318,12 +329,12 @@
         // Base cool shimmer filling the shape
         const mTx = lerp(tl.x, tr.x, 0.5), mTy = lerp(tl.y, tr.y, 0.5);
         const mBx = lerp(bl.x, br2.x, 0.5), mBy = lerp(bl.y, br2.y, 0.5);
-        const bA  = 0.026 + 0.012 * Math.sin(t * 0.00034 + 1.1);
+        const bA  = 0.046 + 0.020 * Math.sin(t * 0.00034 + 1.1);
         const bGr = ctx.createLinearGradient(mTx, mTy, mBx, mBy);
-        bGr.addColorStop(0,    `rgba(185,228,255,${(bA * 0.5).toFixed(3)})`);
-        bGr.addColorStop(0.3,  `rgba(205,238,255,${bA.toFixed(3)})`);
-        bGr.addColorStop(0.65, `rgba(192,230,255,${(bA * 0.8).toFixed(3)})`);
-        bGr.addColorStop(1,    `rgba(175,218,255,${(bA * 0.28).toFixed(3)})`);
+        bGr.addColorStop(0,    `rgba(200,238,255,${(bA * 0.55).toFixed(3)})`);
+        bGr.addColorStop(0.3,  `rgba(220,248,255,${bA.toFixed(3)})`);
+        bGr.addColorStop(0.65, `rgba(205,238,255,${(bA * 0.85).toFixed(3)})`);
+        bGr.addColorStop(1,    `rgba(185,225,255,${(bA * 0.32).toFixed(3)})`);
         ctx.fillStyle = bGr;
         ctx.fillRect(
           Math.min(tl.x, bl.x) - 2, Math.min(tl.y, tr.y) - 2,
@@ -348,17 +359,17 @@
 
             const cx  = topX + (botX - topX) * frac + wave;
             const cy  = topY + (botY - topY) * frac;
-            const hhl = len * 0.13;
+            const hhl = len * 0.17;
 
             const hGr = ctx.createLinearGradient(
               cx - dx * hhl, cy - dy * hhl,
               cx + dx * hhl, cy + dy * hhl
             );
-            hGr.addColorStop(0,   'rgba(210,242,255,0)');
-            hGr.addColorStop(0.5, `rgba(225,248,255,${Math.min(0.99, a).toFixed(3)})`);
-            hGr.addColorStop(1,   'rgba(210,242,255,0)');
+            hGr.addColorStop(0,   'rgba(215,246,255,0)');
+            hGr.addColorStop(0.5, `rgba(238,254,255,${Math.min(0.99, a).toFixed(3)})`);
+            hGr.addColorStop(1,   'rgba(215,246,255,0)');
             ctx.strokeStyle = hGr;
-            ctx.lineWidth   = (1.0 + th.t * 0.6) * sc;
+            ctx.lineWidth   = (1.2 + th.t * 1.0) * sc;
             ctx.beginPath();
             ctx.moveTo(cx - dx * hhl + wave * 0.15, cy - dy * hhl);
             ctx.lineTo(cx + dx * hhl - wave * 0.08, cy + dy * hhl);
@@ -375,6 +386,30 @@
           drawMist(ctx, t, lerp(botR.x, br2.x, m.t), lerp(botR.y, br2.y, m.t), m, 0.00062, 0.00148);
         }
 
+        ctx.restore();
+
+        // Billowing base mist — drawn outside clip so blobs spread into the plunge pool below
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+        for (const b of billow) {
+          const sc2 = coverScale().s;
+          const bx = lerp(bl.x, br2.x, b.t)
+                   + Math.sin(t * b.driftFreq * TAU + b.phase) * b.driftAmp * sc2;
+          const by = lerp(bl.y, br2.y, b.t)
+                   + Math.cos(t * b.driftFreq * TAU * 0.7 + b.phase * 1.3) * b.driftAmp * 0.45 * sc2;
+          const pulse = 0.5 + 0.34 * Math.sin(t * 0.00058 + b.phase)
+                            + 0.16 * Math.sin(t * 0.00134 + b.phase * 1.7);
+          const r = (b.rBase + b.rVar * pulse) * sc2;
+          const a = b.alpha * (0.52 + 0.48 * pulse);
+          if (a < 0.008) continue;
+          const bgrd = ctx.createRadialGradient(bx, by, 0, bx, by, r);
+          bgrd.addColorStop(0,    `rgba(238,254,255,${Math.min(0.99, a * 2.0).toFixed(3)})`);
+          bgrd.addColorStop(0.38, `rgba(215,246,255,${Math.min(0.99, a * 1.1).toFixed(3)})`);
+          bgrd.addColorStop(0.70, `rgba(192,234,255,${(a * 0.45).toFixed(3)})`);
+          bgrd.addColorStop(1,    'rgba(172,220,255,0)');
+          ctx.fillStyle = bgrd;
+          ctx.beginPath(); ctx.arc(bx, by, r, 0, TAU); ctx.fill();
+        }
         ctx.restore();
       }
 
