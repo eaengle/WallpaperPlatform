@@ -29,7 +29,7 @@ public partial class MainWindow : Window
     {
         var hwnd = new WindowInteropHelper(this).Handle;
 
-        var screen   = System.Windows.Forms.Screen.PrimaryScreen!;
+        var screen    = System.Windows.Forms.Screen.PrimaryScreen!;
         bool attached = DesktopHelper.AttachToDesktop(hwnd, screen.Bounds.Width, screen.Bounds.Height);
 
         if (!attached)
@@ -39,7 +39,7 @@ public partial class MainWindow : Window
                 "WallpaperPlatform", MessageBoxButton.OK, MessageBoxImage.Warning);
 
         await InitWebViewAsync();
-        LoadWallpaper("cabin-snow");
+        LoadWallpaper(CurrentWallpaper);
     }
 
     private async Task InitWebViewAsync()
