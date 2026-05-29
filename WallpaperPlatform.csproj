@@ -8,6 +8,7 @@
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationIcon>app.ico</ApplicationIcon>
+    <PlatformTarget>x64</PlatformTarget>
   </PropertyGroup>
 
   <ItemGroup>
@@ -24,24 +25,5 @@
     <EmbeddedResource Include="app.ico" />
     <Compile Remove="tools\**" />
   </ItemGroup>
-
-  <!-- Deploy Release build to the install folder automatically.
-       Requires an elevated terminal (writing to Program Files).
-       Override DeployInstallDir to point elsewhere if needed. -->
-  <PropertyGroup>
-    <DeployInstallDir Condition="'$(DeployInstallDir)' == ''">C:\Program Files\WallpaperPlatform\</DeployInstallDir>
-  </PropertyGroup>
-
-  <Target Name="DeployToInstall" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
-    <ItemGroup>
-      <DeployFiles Include="$(OutDir)**\*" Exclude="$(OutDir)**\*.pdb;$(OutDir)**\*.xml" />
-    </ItemGroup>
-    <MakeDir Directories="$(DeployInstallDir)" />
-    <Copy SourceFiles="@(DeployFiles)"
-          DestinationFiles="@(DeployFiles->'$(DeployInstallDir)%(RecursiveDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true"
-          OverwriteReadOnlyFiles="true" />
-    <Message Text="Deployed to $(DeployInstallDir)" Importance="high" />
-  </Target>
 
 </Project>

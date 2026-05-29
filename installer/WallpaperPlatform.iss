@@ -33,10 +33,11 @@ Source: "{#BuildDir}\WallpaperPlatform.dll";              DestDir: "{app}"; Flag
 Source: "{#BuildDir}\WallpaperPlatform.deps.json";        DestDir: "{app}"; Flags: ignoreversion
 Source: "{#BuildDir}\WallpaperPlatform.runtimeconfig.json"; DestDir: "{app}"; Flags: ignoreversion
 
-; WebView2 managed wrappers (runtime itself is pre-installed on Windows 11)
+; WebView2 managed wrappers + native loader (runtime itself is pre-installed on Windows 11)
 Source: "{#BuildDir}\Microsoft.Web.WebView2.Core.dll";    DestDir: "{app}"; Flags: ignoreversion
 Source: "{#BuildDir}\Microsoft.Web.WebView2.WinForms.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#BuildDir}\Microsoft.Web.WebView2.Wpf.dll";     DestDir: "{app}"; Flags: ignoreversion
+Source: "{#BuildDir}\runtimes\win-x64\native\WebView2Loader.dll"; DestDir: "{app}"; Flags: ignoreversion
 
 ; Wallpaper packages
 Source: "{#BuildDir}\wallpapers\*"; DestDir: "{app}\wallpapers"; \
