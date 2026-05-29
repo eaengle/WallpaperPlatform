@@ -74,6 +74,16 @@
       monitorScreen: [910, 524],   // cracked monitor center — pins 1-4 avg; 39×30 paint-px
       mushroomClump: [1109, 711],  // foreground mushroom cluster — pin 5
       darkCavity:    [779, 619],   // dark hole in server rack — pins 6-9 avg
+      waterfallTL:   [266, 187],   // pin 17 — top-left corner of waterfall
+      waterfallTR:   [313, 199],   // pin 18 — top-right corner
+      waterfallBL:   [280, 388],   // pin 19 — bottom-left corner
+      waterfallBR:   [341, 391],   // pin 20 — bottom-right corner (original, kept for reference)
+      waterfallBotL:   [296, 404], // pin 1 — actual bottom left of bush
+      waterfallBotL2:  [310, 406], // pin 2 — bottom near bush left base
+      waterfallBushTL: [309, 390], // pin 3 — bush left shoulder
+      waterfallBushTR: [325, 391], // pin 4 — bush right shoulder
+      waterfallBotR:   [331, 409], // pin 5 — actual bottom right of bush
+      waterfallBR2:    [349, 414], // pin 6 — far right extended bottom
     };
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -224,6 +234,142 @@
 
         ctx.restore();
       }
+      return { draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Waterfall — permanent ambient shimmer on the cascade (always on).
+    //  Clip polygon traces around the bush at the base.
+    // ══════════════════════════════════════════════════════════════════════════
+    const waterfall = (() => {
+      const THREADS = 14;
+      const threads = Array.from({ length: THREADS }, (_, i) => ({
+        t:     (i + 0.5) / THREADS,
+        phase: rnd(0, TAU),
+        speed: rnd(0.00022, 0.00046),
+        alpha: rnd(0.08, 0.20),
+        wFreq: rnd(0.00014, 0.00030),
+        wAmp:  rnd(0.4, 1.0),
+      }));
+      // Mist split into left-of-bush and right-of-bush pools
+      const mistL = Array.from({ length: 4 }, () => ({
+        t: rnd(0, 1), phase: rnd(0, TAU), r: rnd(5, 13), alpha: rnd(0.05, 0.12),
+      }));
+      const mistR = Array.from({ length: 6 }, () => ({
+        t: rnd(0, 1), phase: rnd(0, TAU), r: rnd(5, 15), alpha: rnd(0.05, 0.13),
+      }));
+
+      function lerp(a, b, f) { return a + (b - a) * f; }
+
+      function drawMist(ctx, t, bx, by, m, freqA, freqB) {
+        const pulse = 0.5 + 0.38 * Math.sin(t * freqA + m.phase)
+                          + 0.12 * Math.sin(t * freqB + m.phase * 1.8);
+        const a = m.alpha * pulse;
+        if (a < 0.006) return;
+        const sc = coverScale().s;
+        const r  = m.r * sc;
+        const grd = ctx.createRadialGradient(bx, by, 0, bx, by, r * 2.0);
+        grd.addColorStop(0,    `rgba(205,240,255,${Math.min(0.99, a * 1.5).toFixed(3)})`);
+        grd.addColorStop(0.45, `rgba(188,228,255,${a.toFixed(3)})`);
+        grd.addColorStop(1,    'rgba(165,215,255,0)');
+        ctx.fillStyle = grd;
+        ctx.beginPath(); ctx.arc(bx, by, r * 2.0, 0, TAU); ctx.fill();
+      }
+
+      function draw(ctx, t) {
+        if (!ANCHORS.waterfallTL || !ANCHORS.waterfallBR2 || !imgNaturalW) return;
+        const tl    = paintToCanvas(...ANCHORS.waterfallTL);
+        const tr    = paintToCanvas(...ANCHORS.waterfallTR);
+        const bl    = paintToCanvas(...ANCHORS.waterfallBL);
+        const br2   = paintToCanvas(...ANCHORS.waterfallBR2);
+        const botL  = paintToCanvas(...ANCHORS.waterfallBotL);
+        const botL2 = paintToCanvas(...ANCHORS.waterfallBotL2);
+        const bshTL = paintToCanvas(...ANCHORS.waterfallBushTL);
+        const bshTR = paintToCanvas(...ANCHORS.waterfallBushTR);
+        const botR  = paintToCanvas(...ANCHORS.waterfallBotR);
+        const sc = coverScale().s;
+
+        ctx.save();
+
+        // Clip: TL → TR → far-right bottom → around bush notch → BL
+        ctx.beginPath();
+        ctx.moveTo(tl.x,    tl.y);
+        ctx.lineTo(tr.x,    tr.y);
+        ctx.lineTo(br2.x,   br2.y);
+        ctx.lineTo(botR.x,  botR.y);
+        ctx.lineTo(bshTR.x, bshTR.y);
+        ctx.lineTo(bshTL.x, bshTL.y);
+        ctx.lineTo(botL2.x, botL2.y);
+        ctx.lineTo(botL.x,  botL.y);
+        ctx.lineTo(bl.x,    bl.y);
+        ctx.closePath();
+        ctx.clip();
+
+        ctx.globalCompositeOperation = 'screen';
+
+        // Base cool shimmer filling the shape
+        const mTx = lerp(tl.x, tr.x, 0.5), mTy = lerp(tl.y, tr.y, 0.5);
+        const mBx = lerp(bl.x, br2.x, 0.5), mBy = lerp(bl.y, br2.y, 0.5);
+        const bA  = 0.026 + 0.012 * Math.sin(t * 0.00034 + 1.1);
+        const bGr = ctx.createLinearGradient(mTx, mTy, mBx, mBy);
+        bGr.addColorStop(0,    `rgba(185,228,255,${(bA * 0.5).toFixed(3)})`);
+        bGr.addColorStop(0.3,  `rgba(205,238,255,${bA.toFixed(3)})`);
+        bGr.addColorStop(0.65, `rgba(192,230,255,${(bA * 0.8).toFixed(3)})`);
+        bGr.addColorStop(1,    `rgba(175,218,255,${(bA * 0.28).toFixed(3)})`);
+        ctx.fillStyle = bGr;
+        ctx.fillRect(
+          Math.min(tl.x, bl.x) - 2, Math.min(tl.y, tr.y) - 2,
+          Math.max(tr.x, br2.x) - Math.min(tl.x, bl.x) + 4,
+          Math.max(bl.y, br2.y) - Math.min(tl.y, tr.y) + 4
+        );
+
+        // Flowing highlights — travel downward; clip handles the bush boundary
+        for (const th of threads) {
+          const topX = lerp(tl.x, tr.x, th.t), topY = lerp(tl.y, tr.y, th.t);
+          const botX = lerp(bl.x, br2.x, th.t), botY = lerp(bl.y, br2.y, th.t);
+          const len  = Math.hypot(botX - topX, botY - topY);
+          if (len < 1) continue;
+          const dx = (botX - topX) / len, dy = (botY - topY) / len;
+          const wave = Math.sin(t * th.wFreq * TAU + th.phase) * th.wAmp * sc;
+
+          for (let k = 0; k < 2; k++) {
+            const frac = ((t * th.speed + th.phase / TAU + k * 0.5) % 1.0);
+            const env  = Math.sin(frac * Math.PI);
+            const a    = th.alpha * env;
+            if (a < 0.01) continue;
+
+            const cx  = topX + (botX - topX) * frac + wave;
+            const cy  = topY + (botY - topY) * frac;
+            const hhl = len * 0.13;
+
+            const hGr = ctx.createLinearGradient(
+              cx - dx * hhl, cy - dy * hhl,
+              cx + dx * hhl, cy + dy * hhl
+            );
+            hGr.addColorStop(0,   'rgba(210,242,255,0)');
+            hGr.addColorStop(0.5, `rgba(225,248,255,${Math.min(0.99, a).toFixed(3)})`);
+            hGr.addColorStop(1,   'rgba(210,242,255,0)');
+            ctx.strokeStyle = hGr;
+            ctx.lineWidth   = (1.0 + th.t * 0.6) * sc;
+            ctx.beginPath();
+            ctx.moveTo(cx - dx * hhl + wave * 0.15, cy - dy * hhl);
+            ctx.lineTo(cx + dx * hhl - wave * 0.08, cy + dy * hhl);
+            ctx.stroke();
+          }
+        }
+
+        // Mist glow — left of bush (BL → BotL2)
+        for (const m of mistL) {
+          drawMist(ctx, t, lerp(bl.x, botL2.x, m.t), lerp(bl.y, botL2.y, m.t), m, 0.00056, 0.00140);
+        }
+        // Mist glow — right of bush (BotR → BR2)
+        for (const m of mistR) {
+          drawMist(ctx, t, lerp(botR.x, br2.x, m.t), lerp(botR.y, br2.y, m.t), m, 0.00062, 0.00148);
+        }
+
+        ctx.restore();
+      }
+
       return { draw };
     })();
 
@@ -1220,6 +1366,7 @@
       godRays.draw(fxCtx, t);
       sunbeamShift.draw(fxCtx, now);
       serverGlow.draw(fxCtx, t, glitchMul * glowSurge.getMul(now));
+      waterfall.draw(fxCtx, t);
       cableSpark.draw(fxCtx, now);
       powerArc.draw(fxCtx, now);
       dataDrift.update(dt, now);
