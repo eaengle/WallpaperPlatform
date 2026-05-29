@@ -5,3 +5,4 @@ obj/
 *.suo
 WebView2Cache/
 WallpaperPlatform_diag.txt
+installer/*.exe
