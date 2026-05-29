@@ -576,6 +576,15 @@
     })();
 
     // ══════════════════════════════════════════════════════════════════════════
+    //  Leaf sprites — shared by leafGust and fallingLeaf
+    // ══════════════════════════════════════════════════════════════════════════
+    const LEAF_IMGS = Array.from({ length: 10 }, (_, i) => {
+      const img = new Image();
+      img.src = `leaf_${String(i + 1).padStart(2, '0')}.png`;
+      return img;
+    });
+
+    // ══════════════════════════════════════════════════════════════════════════
     //  Leaf Gust — burst of leaves sweeping across the lower foreground.
     // ══════════════════════════════════════════════════════════════════════════
     const leafGust = (() => {
@@ -587,17 +596,15 @@
         dir = Math.random() < 0.5 ? 1 : -1;
         const W = window.innerWidth, H = window.innerHeight;
         leaves = Array.from({ length: COUNT }, () => ({
-          x:     dir > 0 ? rnd(-80, -10) : rnd(W + 10, W + 80),
-          y:     rnd(H * 0.54, H * 0.94),
-          vx:    dir * rnd(1.8, 4.5),
-          vy:    rnd(-0.6, 0.7),
-          rot:   rnd(0, TAU),
-          rotV:  rnd(-0.04, 0.04) * dir,
-          sz:    rnd(7, 18),
-          hue:   Math.floor(rnd(88, 148)),
-          sat:   Math.floor(rnd(38, 72)),
-          lit:   Math.floor(rnd(20, 44)),
-          delay: rnd(0, 1800),
+          x:      dir > 0 ? rnd(-80, -10) : rnd(W + 10, W + 80),
+          y:      rnd(H * 0.54, H * 0.94),
+          vx:     dir * rnd(1.8, 4.5),
+          vy:     rnd(-0.6, 0.7),
+          rot:    rnd(0, TAU),
+          rotV:   rnd(-0.04, 0.055) * dir,
+          sz:     H * rnd(0.022, 0.062),
+          imgIdx: Math.floor(Math.random() * 10),
+          delay:  rnd(0, 1800),
         }));
       }
 
@@ -622,14 +629,14 @@
         ctx.save();
         for (const l of leaves) {
           if (age < l.delay) continue;
+          const img = LEAF_IMGS[l.imgIdx];
+          if (!img.complete || !img.naturalWidth) continue;
+          const half = l.sz * 0.5;
           ctx.save();
-          ctx.globalAlpha = env * 0.82;
+          ctx.globalAlpha = env * 0.90;
           ctx.translate(l.x, l.y);
           ctx.rotate(l.rot);
-          ctx.fillStyle = `hsl(${l.hue},${l.sat}%,${l.lit}%)`;
-          ctx.beginPath();
-          ctx.ellipse(0, 0, l.sz, l.sz * 0.44, 0, 0, TAU);
-          ctx.fill();
+          ctx.drawImage(img, -half, -half, l.sz, l.sz);
           ctx.restore();
         }
         ctx.restore();
@@ -998,19 +1005,17 @@
     })();
 
     // ══════════════════════════════════════════════════════════════════════════
-    //  Falling Leaf — a single large leaf drifting down from the canopy.
+    //  Falling Leaf — a single leaf drifting down from the canopy.
     // ══════════════════════════════════════════════════════════════════════════
     const fallingLeaf = (() => {
       const DUR = 9000;
-      let t0 = -Infinity, startX = 0.5, sz = 16, hue = 110, sat = 52, lit = 28, rotStart = 0, rotEnd = 0;
+      let t0 = -Infinity, imgIdx = 0, startX = 0.5, sz = 64, rotStart = 0, rotEnd = 0;
 
       function trigger() {
         t0       = performance.now();
+        imgIdx   = Math.floor(Math.random() * 10);
         startX   = rnd(0.18, 0.82);
-        sz       = rnd(0.020, 0.030) * Math.min(window.innerWidth, window.innerHeight);
-        hue      = Math.floor(rnd(82, 148));
-        sat      = Math.floor(rnd(38, 65));
-        lit      = Math.floor(rnd(19, 38));
+        sz       = rnd(0.030, 0.055) * Math.min(window.innerWidth, window.innerHeight);
         rotStart = rnd(0, TAU);
         rotEnd   = rotStart + rnd(-TAU * 1.2, TAU * 1.2);
       }
@@ -1022,25 +1027,20 @@
         const alpha = p < 0.06 ? p / 0.06 : p > 0.90 ? (1 - p) / 0.10 : 1;
         if (alpha < 0.01) return;
 
+        const img = LEAF_IMGS[imgIdx];
+        if (!img.complete || !img.naturalWidth) return;
+
         const W = window.innerWidth, H = window.innerHeight;
         const cx  = W * startX + Math.sin(p * Math.PI * 2.4) * W * 0.038;
         const cy  = H * (-0.03 + p * 1.06);
         const rot = rotStart + (rotEnd - rotStart) * p;
+        const half = sz * 0.5;
 
         ctx.save();
-        ctx.globalAlpha = alpha * 0.84;
+        ctx.globalAlpha = alpha * 0.90;
         ctx.translate(cx, cy);
         ctx.rotate(rot);
-        ctx.fillStyle = `hsl(${hue},${sat}%,${lit}%)`;
-        ctx.beginPath();
-        ctx.ellipse(0, 0, sz, sz * 0.44, 0, 0, TAU);
-        ctx.fill();
-        ctx.strokeStyle = `hsl(${hue},55%,22%)`;
-        ctx.lineWidth   = sz * 0.07;
-        ctx.beginPath();
-        ctx.moveTo(-sz * 0.88, 0);
-        ctx.lineTo( sz * 0.88, 0);
-        ctx.stroke();
+        ctx.drawImage(img, -half, -half, sz, sz);
         ctx.restore();
       }
 
