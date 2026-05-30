@@ -1,19 +1,8 @@
 {
   "name": "Space Church",
   "version": "1.0.0",
-  "description": "A vast sci-fi cathedral glowing with cosmic energy, crystal pillars, and mechanical altars",
+  "description": "A vast sci-fi gothic cathedral glowing with cosmic energy and alien architecture",
   "tier": "premium",
   "events": [
-    { "name": "light_shaft",     "label": "Ceiling Light Shaft",   "minSeconds": 25, "maxSeconds": 55  },
-    { "name": "altar_surge",     "label": "Altar Surge",           "minSeconds": 20, "maxSeconds": 45  },
-    { "name": "hologram_alcove", "label": "Hologram Alcove",       "minSeconds": 30, "maxSeconds": 65  },
-    { "name": "spider_patrol",   "label": "Spider Patrol",         "minSeconds": 35, "maxSeconds": 75  },
-    { "name": "orb_hover",       "label": "Orb Hover",             "minSeconds": 28, "maxSeconds": 60  },
-    { "name": "spark_burst",     "label": "Spark Burst",           "minSeconds": 18, "maxSeconds": 40  },
-    { "name": "energy_wave",     "label": "Energy Wave",           "minSeconds": 15, "maxSeconds": 35  },
-    { "name": "star_surge",      "label": "Star Window Surge",     "minSeconds": 25, "maxSeconds": 55  },
-    { "name": "conduit_flash",   "label": "Conduit Flash",         "minSeconds": 18, "maxSeconds": 42  },
-    { "name": "vapor_puff",      "label": "Vapor Puff",            "minSeconds": 22, "maxSeconds": 48  },
-    { "name": "night_shift",     "label": "Night Shift",           "minSeconds": 120, "maxSeconds": 240 }
   ]
 }
