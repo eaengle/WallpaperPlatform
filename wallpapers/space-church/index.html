@@ -102,6 +102,10 @@
       // Plasma ball — centroid of the INNER arch polygon (the throne/idol silhouette)
       plasmaCenter: [836, 473],
 
+      // Arch arc — electricity bolt across the upper nave vault
+      archArcLeft:  [371,  76],
+      archArcRight: [1300, 76],
+
       // Robot procession path (pins measured 2026-05-30)
       robotLeftEntry:    [474, 670],   // Pin 1 — left aisle entry point
       robotCenter:       [840, 676],   // Pin 2 — center turn point
@@ -1035,12 +1039,112 @@
     })();
 
     // ══════════════════════════════════════════════════════════════════════════
+    //  Arch arc event — electricity bolt across the upper nave vault
+    // ══════════════════════════════════════════════════════════════════════════
+    const archArc = (() => {
+      const FLASHES  = 4;
+      const DUR      = 2200;   // total ms
+      const BRANCH_N = 3;      // downward branches per flash
+
+      let _active = false, _startAt = -1;
+
+      function trigger() {
+        if (_active) return;
+        _active  = true;
+        _startAt = -1;
+      }
+
+      // Flat [x,y,...] jagged bolt from (x0,y0) to (x1,y1) with `segs` intermediate jitter points
+      function _jag(x0, y0, x1, y1, segs) {
+        const dx = x1 - x0, dy = y1 - y0;
+        const len = Math.sqrt(dx*dx + dy*dy);
+        const spread = len * 0.13;
+        const pts = [x0, y0];
+        for (let i = 1; i < segs; i++) {
+          const fr = i / segs;
+          pts.push(
+            x0 + dx * fr + (Math.random() - 0.5) * spread * 2,
+            y0 + dy * fr + (Math.random() - 0.5) * spread
+          );
+        }
+        pts.push(x1, y1);
+        return pts;
+      }
+
+      function _strokePts(ctx, pts, lw, color) {
+        ctx.lineWidth = lw; ctx.strokeStyle = color;
+        ctx.beginPath(); ctx.moveTo(pts[0], pts[1]);
+        for (let i = 2; i < pts.length; i += 2) ctx.lineTo(pts[i], pts[i+1]);
+        ctx.stroke();
+      }
+
+      function draw(ctx, now) {
+        if (!_active || !ANCHORS.archArcLeft || !ANCHORS.archArcRight || !imgNaturalW) return;
+        if (_startAt < 0) _startAt = now;
+        const elapsed = now - _startAt;
+        if (elapsed >= DUR) { _active = false; return; }
+
+        const { s } = coverScale();
+        const a0 = paintToCanvas(ANCHORS.archArcLeft[0],  ANCHORS.archArcLeft[1]);
+        const a1 = paintToCanvas(ANCHORS.archArcRight[0], ANCHORS.archArcRight[1]);
+
+        // Flash envelope: sharp attack 12%, hold to 62%, fast decay
+        const FLASH_P = DUR / FLASHES;
+        const fp = (elapsed % FLASH_P) / FLASH_P;
+        const env = fp < 0.12 ? fp / 0.12
+                  : fp < 0.62 ? 1.0
+                  : Math.max(0, 1 - (fp - 0.62) / 0.38);
+        if (env < 0.01) return;
+
+        // Main bolt — regenerated every frame for crackle
+        const main = _jag(a0.x, a0.y, a1.x, a1.y, 14);
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+        ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+
+        // 3-layer main bolt (outer glow → mid body → bright core)
+        _strokePts(ctx, main, s * 22, `rgba(110, 40,255,${env * 0.20})`);
+        _strokePts(ctx, main, s *  8, `rgba(185,110,255,${env * 0.48})`);
+        _strokePts(ctx, main, s *  2, `rgba(235,215,255,${env * 0.92})`);
+
+        // Endpoint flares
+        for (const pt of [a0, a1]) {
+          const gr = ctx.createRadialGradient(pt.x, pt.y, 0, pt.x, pt.y, s * 26);
+          gr.addColorStop(0,   `rgba(255,240,255,${env * 0.88})`);
+          gr.addColorStop(0.45,`rgba(165, 85,255,${env * 0.36})`);
+          gr.addColorStop(1,   'rgba(90,30,220,0)');
+          ctx.fillStyle = gr;
+          ctx.beginPath(); ctx.arc(pt.x, pt.y, s * 26, 0, TAU); ctx.fill();
+        }
+
+        // Downward branches — fresh each frame for crackle effect
+        for (let b = 0; b < BRANCH_N; b++) {
+          const si   = Math.floor(1 + Math.random() * (main.length / 2 - 2)) * 2;
+          const bx0  = main[si], by0 = main[si + 1];
+          const bLen = s * rnd(55, 115);
+          const bx1  = bx0 + (Math.random() - 0.5) * s * 38;
+          const by1  = by0 + bLen;
+          const br   = _jag(bx0, by0, bx1, by1, 5);
+          _strokePts(ctx, br, s *  9, `rgba(130, 60,255,${env * 0.16})`);
+          _strokePts(ctx, br, s *  3, `rgba(200,140,255,${env * 0.40})`);
+          _strokePts(ctx, br, s * 0.9,`rgba(240,225,255,${env * 0.78})`);
+        }
+
+        ctx.restore();
+      }
+
+      return { trigger, draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
     //  Event dispatch
     // ══════════════════════════════════════════════════════════════════════════
     function handleSceneEvent(name) {
       switch (name) {
         case 'robot_procession':    robotProcession.trigger();    break;
         case 'float_robot_descent': floatRobotDescent.trigger();  break;
+        case 'arch_arc':            archArc.trigger();            break;
       }
     }
 
@@ -1061,6 +1165,8 @@
       backWindowStars.draw(fxCtx, t);
       // plasma ball — around the central throne, in front of the window
       plasmaBall.draw(fxCtx, t);
+      // arch arc — ceiling lightning bolt across the upper nave vault
+      archArc.draw(fxCtx, now);
       // pillar glow passes (behind images)
       pillar1.drawGlow(fxCtx, now);
       pillar2.drawGlow(fxCtx, now);
