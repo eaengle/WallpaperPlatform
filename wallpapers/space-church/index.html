@@ -108,8 +108,9 @@
       return imgs;
     }
 
-    const SWORD_IMGS_1    = loadImgs('sword_holo', 10);
-    const ANGEL_IMGS_3    = loadImgs('angel_holo', 10);
+    const SWORD_IMGS_1    = loadImgs('sword_holo',   10);
+    const SOLDIER_IMGS_2  = loadImgs('soldier_holo', 10);
+    const ANGEL_IMGS_3    = loadImgs('angel_holo',   10);
     const ABSTRACT_IMGS_4 = loadImgs('abstract_holo', 10);
     const PRIEST_IMGS_5   = loadImgs('priest_holo',   10);
 
@@ -219,7 +220,7 @@
 
     // ── Pillar instances ────────────────────────────────────────────────────
     const pillar1 = makePillarDisplay(SWORD_IMGS_1, 'pillar1TopLeft', 'pillar1TopRight', 'pillar1ImageTop', 'pillar1Lowest', 0, 1.0);
-    const pillar2 = makePillarDisplay(SWORD_IMGS_1, 'pillar2TopLeft', 'pillar2TopRight', 'pillar2ImageTop', 'pillar2Lowest', 0, 1.25);
+    const pillar2 = makePillarDisplay(SOLDIER_IMGS_2, 'pillar2TopLeft', 'pillar2TopRight', 'pillar2ImageTop', 'pillar2Lowest', 0, 1.25);
     const pillar3 = makePillarDisplay(ANGEL_IMGS_3,    'pillar3TopLeft', 'pillar3TopRight', 'pillar3ImageTop', 'pillar3Lowest', 0, 1.0);
     const pillar4 = makePillarDisplay(ABSTRACT_IMGS_4, 'pillar4TopLeft', 'pillar4TopRight', 'pillar4ImageTop', 'pillar4Lowest', 0, 1.1);
     const pillar5 = makePillarDisplay(PRIEST_IMGS_5,   'pillar5TopLeft', 'pillar5TopRight', 'pillar5ImageTop', 'pillar5Lowest', 0, 1.35);
