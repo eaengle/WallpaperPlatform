@@ -59,6 +59,7 @@ Exit
 Select Scene   ▶
     ✓ Cabin in Snow
       Tech Ruin
+      Space Church
       Default
 ──────────────────
 Trigger Event  ▶
@@ -67,6 +68,8 @@ Trigger Event  ▶
     Cabin Flicker
     Window Shadow
     Owl Swoop
+    Rabbit Hop
+    Deer Walk
 ──────────────────
 Stop Wallpaper
 ──────────────────
@@ -164,8 +167,10 @@ WallpaperPlatform/
     ├── default/                    — built-in starfield wallpaper
     ├── cabin-snow/                 — cabin scene with layered snowfall, chimney smoke,
     │                                  flickering window glow, twinkling stars, and 7 events
-    └── tech-ruin/                  — jungle-reclaimed server farm with god rays, floating spores,
-                                       fireflies, waterfall shimmer, server glow, fog patches, and 18 events
+    ├── tech-ruin/                  — jungle-reclaimed server farm with god rays, floating spores,
+    │                                  fireflies, waterfall shimmer, server glow, fog patches, and 18 events
+    └── space-church/               — sci-fi gothic cathedral with plasma tendrils, pillar holograms,
+                                       glowing floor channels, and robot events (premium)
 ```
 
 ### Windows WorkerW Notes
@@ -241,6 +246,13 @@ The `data` field is optional and event-specific. Built-in events per scene:
 | `sunbeam_shift` | An extra god ray drifts slowly across the scene |
 | `night_shift` | The scene darkens as if a cloud passes over the canopy (32 s) |
 | `power_arc` | A lightning bolt arcs between server modules in three flashes |
+
+**space-church** (`wallpapers/space-church/manifest.json`) — premium:
+
+| Event | Effect |
+|---|---|
+| `robot_procession` | A track robot enters from an aisle, walks to center, turns to face the camera, then advances forward |
+| `float_robot_descent` | An orb drone descends from above, floats to center, faces the camera, then exits |
 
 ### Listening in your wallpaper
 
