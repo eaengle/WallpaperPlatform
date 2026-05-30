@@ -1138,6 +1138,252 @@
     })();
 
     // ══════════════════════════════════════════════════════════════════════════
+    //  Portal surge event — cosmic energy floods through the central arch
+    // ══════════════════════════════════════════════════════════════════════════
+    const portalSurge = (() => {
+      const DUR   = 8000;
+      const OUTER = [[713,537],[712,364],[750,319],[837,119],[921,317],[954,364],[957,553]];
+
+      // Shimmer rays — fixed directions fanning from peak toward arch base
+      const RAY_N = 14;
+      const RAYS  = [];
+      for (let i = 0; i < RAY_N; i++) {
+        RAYS.push({
+          tx:    715 + (i / (RAY_N - 1)) * 245,  // target x across arch bottom (paint-px)
+          ty:    510,                              // target y near arch bottom (paint-px)
+          hw:    0.028 + Math.random() * 0.048,   // half-angle of wedge (radians)
+          phase: Math.random() * TAU,
+          freq:  0.0010 + Math.random() * 0.0028,
+        });
+      }
+
+      // Shimmer motes — small sparkle points scattered in the arch interior
+      const MOTES = [];
+      for (let i = 0; i < 30; i++) {
+        MOTES.push({
+          px:    718 + Math.random() * 238,   // paint-px x within arch
+          py:    185 + Math.random() * 310,   // paint-px y within arch star field
+          r:     0.45 + Math.random() * 1.8,  // paint-px radius
+          phase: Math.random() * TAU,
+          freq:  0.0022 + Math.random() * 0.0048,
+        });
+      }
+
+      let _active = false, _startAt = -1;
+
+      function trigger() {
+        if (_active) return;
+        _active  = true;
+        _startAt = -1;
+      }
+
+      function draw(ctx, now) {
+        if (!_active || !imgNaturalW) return;
+        if (_startAt < 0) _startAt = now;
+        const elapsed = now - _startAt;
+        if (elapsed >= DUR) { _active = false; return; }
+
+        const env = Math.sin((elapsed / DUR) * Math.PI);
+        if (env < 0.01) return;
+
+        const { s } = coverScale();
+        ctx.save();
+
+        // Clip to outer arch polygon
+        const os = OUTER.map(([px, py]) => paintToCanvas(px, py));
+        ctx.beginPath();
+        ctx.moveTo(os[0].x, os[0].y);
+        for (let i = 1; i < os.length; i++) ctx.lineTo(os[i].x, os[i].y);
+        ctx.closePath();
+        ctx.clip();
+
+        const peak   = paintToCanvas(837, 119);
+        const base   = paintToCanvas(836, 553);
+        const burstR = Math.hypot(base.x - peak.x, base.y - peak.y) * 1.1;
+
+        ctx.globalCompositeOperation = 'screen';
+
+        // ── Base radial flood ──────────────────────────────────────────────
+        const gr = ctx.createRadialGradient(peak.x, peak.y, 0, peak.x, peak.y, burstR);
+        gr.addColorStop(0,    `rgba(255,245,255,${env * 1.00})`);
+        gr.addColorStop(0.10, `rgba(220,165,255,${env * 0.90})`);
+        gr.addColorStop(0.30, `rgba(160, 90,255,${env * 0.68})`);
+        gr.addColorStop(0.60, `rgba( 95, 35,230,${env * 0.38})`);
+        gr.addColorStop(1,    'rgba(45,10,190,0)');
+        ctx.fillStyle = gr;
+        ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+
+        // ── Shimmer rays — thin wedges from peak, each flickering independently ──
+        for (const ray of RAYS) {
+          const fl = 0.35 + 0.65 * Math.sin(now * ray.freq + ray.phase);
+          const a  = env * fl * 0.42;
+          if (a < 0.01) continue;
+          // Direction vector from peak toward target point
+          const tgt = paintToCanvas(ray.tx, ray.ty);
+          const dx  = tgt.x - peak.x, dy = tgt.y - peak.y;
+          const len = Math.hypot(dx, dy) || 1;
+          const ux  = dx / len, uy = dy / len;
+          // Perpendicular unit vector for wedge width
+          const px  = -uy, py = ux;
+          const hw  = Math.sin(ray.hw) * burstR;
+          // Tip of the wedge (at burstR distance from peak)
+          const tx  = peak.x + ux * burstR, ty = peak.y + uy * burstR;
+          const rg  = ctx.createLinearGradient(peak.x, peak.y, tx, ty);
+          rg.addColorStop(0,    `rgba(255,250,255,${a})`);
+          rg.addColorStop(0.45, `rgba(200,145,255,${a * 0.55})`);
+          rg.addColorStop(1,    'rgba(130,70,255,0)');
+          ctx.fillStyle = rg;
+          ctx.beginPath();
+          ctx.moveTo(peak.x, peak.y);
+          ctx.lineTo(tx + px * hw, ty + py * hw);
+          ctx.lineTo(tx - px * hw, ty - py * hw);
+          ctx.closePath();
+          ctx.fill();
+        }
+
+        // ── Shimmer motes — small bright sparkles within the arch ──────────
+        for (const m of MOTES) {
+          const fl = 0.5 + 0.5 * Math.sin(now * m.freq + m.phase);
+          const a  = env * fl * fl * 0.92;  // squared for a snap-twinkle feel
+          if (a < 0.03) continue;
+          const mc = paintToCanvas(m.px, m.py);
+          const r  = m.r * s;
+          const mg = ctx.createRadialGradient(mc.x, mc.y, 0, mc.x, mc.y, r * 5);
+          mg.addColorStop(0,   `rgba(255,255,255,${a})`);
+          mg.addColorStop(0.25,`rgba(230,195,255,${a * 0.65})`);
+          mg.addColorStop(1,   'rgba(160,100,255,0)');
+          ctx.fillStyle = mg;
+          ctx.beginPath(); ctx.arc(mc.x, mc.y, r * 5, 0, TAU); ctx.fill();
+        }
+
+        ctx.restore();
+      }
+
+      return { trigger, draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Plasma eruption event — throne plasma explodes with extended tendrils
+    // ══════════════════════════════════════════════════════════════════════════
+    const plasmaEruption = (() => {
+      const DUR       = 12000;
+      const RISE_MS   = 1800;
+      const FALL_MS   = 2500;
+      const HOLD_MS   = DUR - RISE_MS - FALL_MS;
+      const RADIUS_PX = 160;
+      const EXT_R     = RADIUS_PX * 2.5;  // extended reach (paint-px)
+      const ARM_N     = 7;
+      const REGEN_MS  = 2500;
+
+      let _active = false, _startAt = -1;
+      let _arms = [], _regenAt = -9999;
+
+      function _zz(x0, y0, x1, y1, d, sp, pts) {
+        if (d === 0) { if (!pts.length) pts.push(x0, y0); pts.push(x1, y1); return; }
+        const mx = (x0+x1)/2 + (Math.random()-0.5)*sp;
+        const my = (y0+y1)/2 + (Math.random()-0.5)*sp;
+        _zz(x0,y0,mx,my,d-1,sp*0.58,pts); _zz(mx,my,x1,y1,d-1,sp*0.58,pts);
+      }
+      function _lerp(a, b, p) {
+        const o = new Array(a.length);
+        for (let i = 0; i < a.length; i++) o[i] = a[i]+(b[i]-a[i])*p;
+        return o;
+      }
+      function _ease(p) { return p*p*(3-2*p); }
+      function _str(ctx, pts, lw, al, rgb) {
+        if (pts.length < 4) return;
+        ctx.strokeStyle = `rgba(${rgb},${al})`; ctx.lineWidth = lw;
+        ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+        ctx.beginPath(); ctx.moveTo(pts[0], pts[1]);
+        for (let i = 2; i < pts.length; i += 2) ctx.lineTo(pts[i], pts[i+1]);
+        ctx.stroke();
+      }
+      function _mk(c, R, drift, k) {
+        const ang = (k/ARM_N)*TAU + drift + (Math.random()-0.5)*0.2;
+        const ex = c.x+Math.cos(ang)*R, ey = c.y+Math.sin(ang)*R;
+        const pts = []; _zz(c.x, c.y, ex, ey, 4, R*0.28, pts);
+        return { pts, phase: Math.random()*TAU };
+      }
+      function _regen(c, R, drift) {
+        if (!_arms.length) {
+          for (let k = 0; k < ARM_N; k++) {
+            const { pts, phase } = _mk(c, R, drift, k);
+            _arms.push({ fromPts: pts, toPts: pts, phase });
+          }
+        } else {
+          for (let k = 0; k < ARM_N; k++) {
+            _arms[k].fromPts = _arms[k].toPts;
+            const { pts } = _mk(c, R, drift, k);
+            _arms[k].toPts = pts;
+          }
+        }
+      }
+
+      function trigger() {
+        if (_active) return;
+        _active = true; _startAt = -1; _arms = []; _regenAt = -9999;
+      }
+
+      function draw(ctx, now) {
+        if (!_active || !ANCHORS.plasmaCenter || !imgNaturalW) return;
+        if (_startAt < 0) _startAt = now;
+        const elapsed = now - _startAt;
+        if (elapsed >= DUR) { _active = false; return; }
+
+        let env;
+        if (elapsed < RISE_MS)                    env = _ease(elapsed / RISE_MS);
+        else if (elapsed < RISE_MS + HOLD_MS)     env = 1.0;
+        else                                       env = 1 - _ease((elapsed - RISE_MS - HOLD_MS) / FALL_MS);
+        if (env < 0.01) return;
+
+        const { s } = coverScale();
+        const c     = paintToCanvas(ANCHORS.plasmaCenter[0], ANCHORS.plasmaCenter[1]);
+        const R     = EXT_R * s;
+        const drift = now * 0.000048;
+
+        if (now - _regenAt > REGEN_MS) { _regen(c, R, drift); _regenAt = now; }
+        if (!_arms.length) return;
+        const transP = _ease(Math.min(1, (now - _regenAt) / REGEN_MS));
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+
+        // Expanding sphere halo
+        const hR = RADIUS_PX * s * (1 + env * 1.8);
+        const hl = ctx.createRadialGradient(c.x, c.y, RADIUS_PX*s*0.4, c.x, c.y, hR);
+        hl.addColorStop(0,   `rgba(255,220,255,${env*0.32})`);
+        hl.addColorStop(0.3, `rgba(190,110,255,${env*0.20})`);
+        hl.addColorStop(0.7, `rgba(110, 45,230,${env*0.10})`);
+        hl.addColorStop(1,   'rgba(60,10,190,0)');
+        ctx.fillStyle = hl;
+        ctx.beginPath(); ctx.arc(c.x, c.y, hR, 0, TAU); ctx.fill();
+
+        // Extended tendrils
+        for (const { fromPts, toPts, phase } of _arms) {
+          const fl  = 0.55 + 0.45 * Math.sin(now * 0.0015 + phase);
+          const pts = _lerp(fromPts, toPts, transP);
+          const a   = env * fl;
+          _str(ctx, pts, s*5.5, a*0.16, '155,75,255');
+          _str(ctx, pts, s*2.2, a*0.52, '200,130,255');
+          _str(ctx, pts, s*0.8, a*0.90, '245,220,255');
+        }
+
+        // Supercharged core flash
+        const cR  = RADIUS_PX * s * 0.42;
+        const cor = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, cR);
+        cor.addColorStop(0,   `rgba(255,255,255,${env*0.80})`);
+        cor.addColorStop(0.4, `rgba(235,185,255,${env*0.45})`);
+        cor.addColorStop(1,   'rgba(160,80,255,0)');
+        ctx.fillStyle = cor;
+        ctx.beginPath(); ctx.arc(c.x, c.y, cR, 0, TAU); ctx.fill();
+
+        ctx.restore();
+      }
+
+      return { trigger, draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
     //  Event dispatch
     // ══════════════════════════════════════════════════════════════════════════
     function handleSceneEvent(name) {
@@ -1145,6 +1391,8 @@
         case 'robot_procession':    robotProcession.trigger();    break;
         case 'float_robot_descent': floatRobotDescent.trigger();  break;
         case 'arch_arc':            archArc.trigger();            break;
+        case 'portal_surge':        portalSurge.trigger();        break;
+        case 'plasma_eruption':     plasmaEruption.trigger();     break;
       }
     }
 
@@ -1165,6 +1413,10 @@
       backWindowStars.draw(fxCtx, t);
       // plasma ball — around the central throne, in front of the window
       plasmaBall.draw(fxCtx, t);
+      // plasma eruption — extended tendrils event, layered on top of base plasma
+      plasmaEruption.draw(fxCtx, now);
+      // portal surge — arch brightness flood, on top of stars and plasma
+      portalSurge.draw(fxCtx, now);
       // arch arc — ceiling lightning bolt across the upper nave vault
       archArc.draw(fxCtx, now);
       // pillar glow passes (behind images)
