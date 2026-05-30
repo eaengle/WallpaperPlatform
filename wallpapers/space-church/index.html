@@ -93,6 +93,11 @@
       pillar5TopRight: [1555, 683],  // pin 3 — rightmost corner of pillar 5 top surface
       pillar5ImageTop: [1438, 366],  // pin 5 — top-center of pillar 5 display area
       pillar5Lowest:   [1443, 686],  // pin 2 — lowest point of pillar 5 top surface
+
+      pillar6TopLeft:  [381, 645],   // pin 2 — leftmost corner of pillar 6 top surface
+      pillar6TopRight: [481, 641],   // pin 4 — rightmost corner of pillar 6 top surface
+      pillar6ImageTop: [435, 480],   // pin 5 — top-center of pillar 6 display area
+      pillar6Lowest:   [444, 647],   // pin 3 — lowest point of pillar 6 top surface
     };
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -113,6 +118,7 @@
     const ANGEL_IMGS_3    = loadImgs('angel_holo',   10);
     const ABSTRACT_IMGS_4 = loadImgs('abstract_holo', 10);
     const PRIEST_IMGS_5   = loadImgs('priest_holo',   10);
+    const ALIEN_IMGS_6    = loadImgs('alien_holo',    10);
 
     // ══════════════════════════════════════════════════════════════════════════
     //  Pillar display factory
@@ -224,6 +230,7 @@
     const pillar3 = makePillarDisplay(ANGEL_IMGS_3,    'pillar3TopLeft', 'pillar3TopRight', 'pillar3ImageTop', 'pillar3Lowest', 0, 1.0);
     const pillar4 = makePillarDisplay(ABSTRACT_IMGS_4, 'pillar4TopLeft', 'pillar4TopRight', 'pillar4ImageTop', 'pillar4Lowest', 0, 1.1);
     const pillar5 = makePillarDisplay(PRIEST_IMGS_5,   'pillar5TopLeft', 'pillar5TopRight', 'pillar5ImageTop', 'pillar5Lowest', 0, 0.972);
+    const pillar6 = makePillarDisplay(ALIEN_IMGS_6,    'pillar6TopLeft', 'pillar6TopRight', 'pillar6ImageTop', 'pillar6Lowest', 0, 1.1);
 
     // ══════════════════════════════════════════════════════════════════════════
     //  Canvas setup
@@ -275,18 +282,21 @@
       pillar3.drawGlow(fxCtx, now);
       pillar4.drawGlow(fxCtx, now);
       pillar5.drawGlow(fxCtx, now);
+      pillar6.drawGlow(fxCtx, now);
       // image passes
       pillar1.drawImage(fxCtx, now);
       pillar2.drawImage(fxCtx, now);
       pillar3.drawImage(fxCtx, now);
       pillar4.drawImage(fxCtx, now);
       pillar5.drawImage(fxCtx, now);
+      pillar6.drawImage(fxCtx, now);
       // particle passes (in front)
       pillar1.drawParticles(fxCtx, dt);
       pillar2.drawParticles(fxCtx, dt);
       pillar3.drawParticles(fxCtx, dt);
       pillar4.drawParticles(fxCtx, dt);
       pillar5.drawParticles(fxCtx, dt);
+      pillar6.drawParticles(fxCtx, dt);
     }
 
     // ══════════════════════════════════════════════════════════════════════════
