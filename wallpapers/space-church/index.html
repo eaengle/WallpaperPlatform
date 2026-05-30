@@ -319,12 +319,13 @@
         const total = dists[dists.length - 1];
         if (total < 1) return;
 
+        const bb = cathedralDimming.getBrightBoost();
         ctx.save();
         ctx.globalCompositeOperation = 'screen';
 
         // ── Ambient base glow on visible segments only ──────────────────────
         const breathe = 0.5 + 0.5 * Math.sin(t * 0.00083);
-        const baseA   = 0.05 + breathe * 0.025;
+        const baseA   = (0.05 + breathe * 0.025) * bb;
         for (let i = 0; i < segs.length; i++) {
           if (!segs[i]) continue;
           const p0 = pts[i], p1 = pts[i+1];
@@ -364,7 +365,7 @@
 
           // Flat-top brightness envelope
           const env = clamp(frac * 8, 0, 1) * clamp((1 - frac) * 8, 0, 1);
-          const pA  = env * 0.55;
+          const pA  = env * 0.55 * bb;
           if (pA < 0.01) continue;
 
           // Clamp each arm against segment boundaries so the capsule shrinks
@@ -497,20 +498,21 @@
 
         // Ambient sphere glow
         const pulse = 0.5 + 0.5 * Math.sin(t * 0.00097);
+        const bb = cathedralDimming.getBrightBoost();
         const sph = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, R * 1.15);
-        sph.addColorStop(0,    `rgba(230,180,255,${0.32 + pulse * 0.18})`);
-        sph.addColorStop(0.25, `rgba(160, 80,255,${0.22 + pulse * 0.10})`);
-        sph.addColorStop(0.65, `rgba( 80, 20,200,${0.10})`);
+        sph.addColorStop(0,    `rgba(230,180,255,${(0.32 + pulse * 0.18) * bb})`);
+        sph.addColorStop(0.25, `rgba(160, 80,255,${(0.22 + pulse * 0.10) * bb})`);
+        sph.addColorStop(0.65, `rgba( 80, 20,200,${0.10 * bb})`);
         sph.addColorStop(1,    'rgba(30,0,100,0)');
         ctx.fillStyle = sph;
         ctx.beginPath(); ctx.arc(c.x, c.y, R * 1.15, 0, TAU); ctx.fill();
 
         // Glass sphere ring
-        ctx.strokeStyle = `rgba(190,130,255,${0.20 + pulse * 0.09})`;
+        ctx.strokeStyle = `rgba(190,130,255,${(0.20 + pulse * 0.09) * bb})`;
         ctx.lineWidth   = s * 1.5;
         ctx.beginPath(); ctx.arc(c.x, c.y, R, 0, TAU); ctx.stroke();
         // Specular highlight arc (upper-left quadrant)
-        ctx.strokeStyle = `rgba(240,210,255,${0.28 + pulse * 0.10})`;
+        ctx.strokeStyle = `rgba(240,210,255,${(0.28 + pulse * 0.10) * bb})`;
         ctx.lineWidth   = s * 0.7;
         ctx.beginPath(); ctx.arc(c.x, c.y, R, Math.PI * 1.15, Math.PI * 1.72); ctx.stroke();
 
@@ -518,27 +520,27 @@
         for (const { fromPts, toPts, fromBpts, toBpts, phase } of _arms) {
           const fl  = 0.65 + 0.35 * Math.sin(t * 0.0018 + phase);
           const pts = _lerpPts(fromPts, toPts, transP);
-          _stroke(ctx, pts, s * 3.8, fl * 0.20, '140,60,255');
-          _stroke(ctx, pts, s * 1.5, fl * 0.58, '185,105,255');
-          _stroke(ctx, pts, s * 0.5, fl * 0.92, '235,210,255');
+          _stroke(ctx, pts, s * 3.8, fl * 0.20 * bb, '140,60,255');
+          _stroke(ctx, pts, s * 1.5, fl * 0.58 * bb, '185,105,255');
+          _stroke(ctx, pts, s * 0.5, fl * 0.92 * bb, '235,210,255');
 
           // Branch: lerp if both frames have one, else fade in/out
           if (fromBpts && toBpts) {
             const bpts = _lerpPts(fromBpts, toBpts, transP);
-            _stroke(ctx, bpts, s * 2.4, fl * 0.17, '155,80,255');
-            _stroke(ctx, bpts, s * 0.9, fl * 0.50, '205,155,255');
-            _stroke(ctx, bpts, s * 0.3, fl * 0.85, '245,225,255');
+            _stroke(ctx, bpts, s * 2.4, fl * 0.17 * bb, '155,80,255');
+            _stroke(ctx, bpts, s * 0.9, fl * 0.50 * bb, '205,155,255');
+            _stroke(ctx, bpts, s * 0.3, fl * 0.85 * bb, '245,225,255');
           } else if (toBpts) {
             ctx.save(); ctx.globalAlpha = transP;
-            _stroke(ctx, toBpts, s * 2.4, fl * 0.17, '155,80,255');
-            _stroke(ctx, toBpts, s * 0.9, fl * 0.50, '205,155,255');
-            _stroke(ctx, toBpts, s * 0.3, fl * 0.85, '245,225,255');
+            _stroke(ctx, toBpts, s * 2.4, fl * 0.17 * bb, '155,80,255');
+            _stroke(ctx, toBpts, s * 0.9, fl * 0.50 * bb, '205,155,255');
+            _stroke(ctx, toBpts, s * 0.3, fl * 0.85 * bb, '245,225,255');
             ctx.restore();
           } else if (fromBpts) {
             ctx.save(); ctx.globalAlpha = 1 - transP;
-            _stroke(ctx, fromBpts, s * 2.4, fl * 0.17, '155,80,255');
-            _stroke(ctx, fromBpts, s * 0.9, fl * 0.50, '205,155,255');
-            _stroke(ctx, fromBpts, s * 0.3, fl * 0.85, '245,225,255');
+            _stroke(ctx, fromBpts, s * 2.4, fl * 0.17 * bb, '155,80,255');
+            _stroke(ctx, fromBpts, s * 0.9, fl * 0.50 * bb, '205,155,255');
+            _stroke(ctx, fromBpts, s * 0.3, fl * 0.85 * bb, '245,225,255');
             ctx.restore();
           }
         }
@@ -1029,9 +1031,9 @@
         // breathe: 0 (bright/inhale) → 1 (dim/exhale), ~7s full cycle
         // phase-modulation at ~48s period keeps the rhythm subtly varied
         const breathe = 0.5 + 0.5 * Math.sin(t * 0.00045 + Math.sin(t * 0.000065) * 0.4);
-        const opacity = breathe * 0.55;             // max 55% overlay opacity
+        const opacity = Math.min(0.88, breathe * 0.55 + cathedralDimming.getOverlayBoost());
         overlay.style.opacity = opacity.toFixed(3);
-        _mul = 1 - breathe;                         // 1.0 = bright, 0.0 = darkest
+        _mul = 1 - breathe;
       }
       let _mul = 1.0;
       function getMul() { return _mul; }
@@ -1384,6 +1386,43 @@
     })();
 
     // ══════════════════════════════════════════════════════════════════════════
+    //  Cathedral dimming event — overlay rises to ~0.5 while canvas effects
+    //  compensate by brightening; midnight-ceremony atmosphere for ~30s.
+    // ══════════════════════════════════════════════════════════════════════════
+    const cathedralDimming = (() => {
+      const FADE_IN_MS  = 5000;
+      const HOLD_MS     = 20000;
+      const FADE_OUT_MS = 5000;
+      const TOTAL_MS    = FADE_IN_MS + HOLD_MS + FADE_OUT_MS;
+      const OVERLAY_BOOST = 0.38;  // extra overlay opacity pushed on top of normal breathe
+      const BRIGHT_BOOST  = 1.5;  // canvas brightness multiplier at peak
+
+      let _active = false, _startAt = -1, _env = 0;
+
+      function _ease(p) { return p * p * (3 - 2 * p); }
+
+      function trigger() {
+        if (_active) return;
+        _active = true; _startAt = -1; _env = 0;
+      }
+
+      function tick(now) {
+        if (!_active) { _env = 0; return; }
+        if (_startAt < 0) _startAt = now;
+        const e = now - _startAt;
+        if (e >= TOTAL_MS) { _active = false; _env = 0; return; }
+        if (e < FADE_IN_MS)                _env = _ease(e / FADE_IN_MS);
+        else if (e < FADE_IN_MS + HOLD_MS) _env = 1.0;
+        else                               _env = 1 - _ease((e - FADE_IN_MS - HOLD_MS) / FADE_OUT_MS);
+      }
+
+      function getOverlayBoost() { return _env * OVERLAY_BOOST; }
+      function getBrightBoost()  { return 1 + _env * (BRIGHT_BOOST - 1); }
+
+      return { trigger, tick, getOverlayBoost, getBrightBoost };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
     //  Event dispatch
     // ══════════════════════════════════════════════════════════════════════════
     function handleSceneEvent(name) {
@@ -1393,6 +1432,7 @@
         case 'arch_arc':            archArc.trigger();            break;
         case 'portal_surge':        portalSurge.trigger();        break;
         case 'plasma_eruption':     plasmaEruption.trigger();     break;
+        case 'cathedral_dimming':   cathedralDimming.trigger();   break;
       }
     }
 
@@ -1407,6 +1447,7 @@
     //  Draw order
     // ══════════════════════════════════════════════════════════════════════════
     function drawEffects(dt, t, now) {
+      cathedralDimming.tick(now);
       sceneBrightness.update(t);
       fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
       // back window stars — drawn first, appear inside the cosmic arch behind the structure

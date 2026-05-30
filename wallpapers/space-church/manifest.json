@@ -8,6 +8,7 @@
     { "name": "float_robot_descent", "minSeconds": 50,  "maxSeconds": 100, "label": "Floating Robot" },
     { "name": "arch_arc",            "minSeconds": 25,  "maxSeconds": 60,  "label": "Arch Lightning" },
     { "name": "portal_surge",        "minSeconds": 35,  "maxSeconds": 75,  "label": "Portal Surge" },
-    { "name": "plasma_eruption",     "minSeconds": 45,  "maxSeconds": 85,  "label": "Plasma Eruption" }
+    { "name": "plasma_eruption",     "minSeconds": 45,  "maxSeconds": 85,  "label": "Plasma Eruption" },
+    { "name": "cathedral_dimming",   "minSeconds": 60,  "maxSeconds": 120, "label": "Cathedral Dimming" }
   ]
 }
