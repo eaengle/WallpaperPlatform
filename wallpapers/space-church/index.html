@@ -101,6 +101,22 @@
 
       // Plasma ball — centroid of the INNER arch polygon (the throne/idol silhouette)
       plasmaCenter: [836, 473],
+
+      // Robot procession path (pins measured 2026-05-30)
+      robotLeftEntry:    [474, 670],   // Pin 1 — left aisle entry point
+      robotCenter:       [840, 676],   // Pin 2 — center turn point
+      robotRightEntry:   [1200, 676],  // Pin 3 — right aisle entry point
+      robotExit:         [849, 938],   // Pin 4 — forward exit (bottom of aisle)
+      // Mid-aisle pillar occlusion edges
+      robotOccLeft1:     [558, 666],   // Pin 5 — near edge of left mid-pillar
+      robotOccLeft2:     [613, 666],   // Pin 6 — far edge of left mid-pillar
+      robotOccRight1:    [1059, 671],  // Pin 7 — far edge of right mid-pillar
+      robotOccRight2:    [1115, 674],  // Pin 8 — near edge of right mid-pillar
+      // Entry pillar occlusion edges — robot stays hidden until past these
+      robotEntryOccLeft1:  [434, 645], // Pin 9  — near edge of left entry pillar
+      robotEntryOccLeft2:  [489, 645], // Pin 10 — far edge of left entry pillar
+      robotEntryOccRight1: [1240, 643],// Pin 11 — near edge of right entry pillar
+      robotEntryOccRight2: [1182, 645],// Pin 12 — far edge of right entry pillar
     };
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -122,6 +138,13 @@
     const ABSTRACT_IMGS_4 = loadImgs('abstract_holo', 10);
     const PRIEST_IMGS_5   = loadImgs('priest_holo',   10);
     const ALIEN_IMGS_6    = loadImgs('alien_holo',    10);
+
+    // Robot procession sprites (green-bg removed via Pillow)
+    function _loadImg(src) { const i = new Image(); i.src = src; return i; }
+    const ROBOT_SIDE_IMG       = _loadImg('robot_side.png');       // sprite 1 — side/entry view
+    const ROBOT_TURN_LEFT_IMG  = _loadImg('robot_turn_left.png');  // sprite 6 — left-entry turn
+    const ROBOT_TURN_RIGHT_IMG = _loadImg('robot_turn_right.png'); // sprite 5 — right-entry turn
+    const ROBOT_FRONT_IMG      = _loadImg('robot_front.png');      // sprite 10 — forward movement
 
     // ══════════════════════════════════════════════════════════════════════════
     //  Pillar display factory
@@ -527,6 +550,152 @@
     })();
 
     // ══════════════════════════════════════════════════════════════════════════
+    //  Robot procession event
+    //
+    //  Path: entry pillar → [left|right entry pin] → center (turn) → exit (toward camera)
+    //  Sprites: side (entry), turn_left/turn_right (at center), front (forward walk)
+    //  Pillar occlusion: alpha fades to 0 as robot passes through mid-pillar x-zones,
+    //  then fades back in — simulates the robot passing behind the stone columns.
+    // ══════════════════════════════════════════════════════════════════════════
+    const robotProcession = (() => {
+      // Phase durations (ms)
+      const EMERGE_DUR  = 2000;  // robot steps out from behind entry-side pillar
+      const WALK_DUR    = 4500;  // walks along aisle to center, passing mid-pillar zone
+      const TURN_DUR    = 1500;  // turns to face forward at center
+      const FORWARD_DUR = 6000;  // walks toward camera, growing in size
+      const TOTAL_DUR   = EMERGE_DUR + WALK_DUR + TURN_DUR + FORWARD_DUR;
+
+      // Robot height in paint-pixels at each depth extreme
+      const H_FAR  = 75;   // at aisle level (~y=676)
+      const H_NEAR = 220;  // at exit (~y=938, near camera)
+
+      // Mid-pillar occlusion zone x-coords in paint-px
+      const OCC_L1 = 558, OCC_L2 = 613;   // left path  (pins 5, 6)
+      const OCC_R1 = 1059, OCC_R2 = 1115; // right path (pins 7, 8)
+      const OCC_FADE = 32;                 // fade width for mid-aisle pillars
+
+      // Entry-pillar occlusion zones — robot starts inside these, first becomes visible after
+      const OCC_EL1 = 434, OCC_EL2 = 489;   // left entry pillar (pins 9, 10)
+      const OCC_ER1 = 1182, OCC_ER2 = 1240; // right entry pillar (pins 11, 12)
+      const OCC_ENTRY_FADE = 20;             // tighter fade for entry pillars
+
+      let _active = false, _startAt = -1, _dir = 0; // dir: -1=from left, 1=from right
+
+      function trigger() {
+        if (_active) return;
+        _dir    = Math.random() < 0.5 ? -1 : 1;
+        _active = true;
+        _startAt = -1;
+      }
+
+      function _eio(t) { return t < 0.5 ? 2*t*t : -1+(4-2*t)*t; } // ease-in-out
+
+      // Smooth alpha: 0 inside [zA,zB], 1 outside, soft ramp of width fadeW
+      function _occAlpha(px, zA, zB, fadeW = OCC_FADE) {
+        const mn = Math.min(zA, zB), mx = Math.max(zA, zB);
+        if (px > mn && px < mx)                   return 0.0;
+        if (px <= mn - fadeW || px >= mx + fadeW) return 1.0;
+        if (px <= mn)  return (mn - px) / fadeW;
+        return (px - mx) / fadeW;
+      }
+
+      function draw(ctx, now) {
+        if (!_active || !imgNaturalW) return;
+        if (_startAt < 0) _startAt = now;
+        const elapsed = now - _startAt;
+        if (elapsed >= TOTAL_DUR) { _active = false; return; }
+
+        const { s } = coverScale();
+
+        // Canvas-space key positions
+        const lEntry  = paintToCanvas(474,  670);
+        const rEntry  = paintToCanvas(1200, 676);
+        const center  = paintToCanvas(840,  676);
+        const exit    = paintToCanvas(849,  938);
+
+        // Emerge-from start positions — inside the entry pillar zone so robot begins hidden
+        const lEmerge = paintToCanvas(450,  670);  // inside left entry pillar [434,489]
+        const rEmerge = paintToCanvas(1210, 676);  // inside right entry pillar [1182,1240]
+
+        let img, cx, cy, alpha = 1.0, paintH = H_FAR, flipX = false;
+
+        if (elapsed < EMERGE_DUR) {
+          // Robot travels hidden inside the entry pillar; first becomes visible in WALK phase
+          const p = _eio(elapsed / EMERGE_DUR);
+          if (_dir === -1) {
+            cx = lEmerge.x + (lEntry.x - lEmerge.x) * p;
+            cy = lEmerge.y + (lEntry.y - lEmerge.y) * p;
+            img = ROBOT_SIDE_IMG; flipX = false;
+            const curPX = 450 + (474 - 450) * p;
+            alpha = _occAlpha(curPX, OCC_EL1, OCC_EL2, OCC_ENTRY_FADE); // always 0 (inside zone)
+          } else {
+            cx = rEmerge.x + (rEntry.x - rEmerge.x) * p;
+            cy = rEmerge.y + (rEntry.y - rEmerge.y) * p;
+            img = ROBOT_SIDE_IMG; flipX = true;
+            const curPX = 1210 + (1200 - 1210) * p;
+            alpha = _occAlpha(curPX, OCC_ER1, OCC_ER2, OCC_ENTRY_FADE); // always 0 (inside zone)
+          }
+
+        } else if (elapsed < EMERGE_DUR + WALK_DUR) {
+          // Robot walks along aisle to center, passing through both pillar occlusion zones.
+          // First visible moment: just after exiting the entry pillar (pins 9/10 or 11/12).
+          const p = _eio((elapsed - EMERGE_DUR) / WALK_DUR);
+          if (_dir === -1) {
+            cx = lEntry.x + (center.x - lEntry.x) * p;
+            cy = lEntry.y + (center.y - lEntry.y) * p;
+            img = ROBOT_SIDE_IMG; flipX = false;
+            const px = 474 + (840 - 474) * p;
+            alpha = Math.min(
+              _occAlpha(px, OCC_EL1, OCC_EL2, OCC_ENTRY_FADE),  // entry pillar (pins 9,10)
+              _occAlpha(px, OCC_L1,  OCC_L2)                     // mid-aisle pillar (pins 5,6)
+            );
+          } else {
+            cx = rEntry.x + (center.x - rEntry.x) * p;
+            cy = rEntry.y + (center.y - rEntry.y) * p;
+            img = ROBOT_SIDE_IMG; flipX = true;
+            const px = 1200 + (840 - 1200) * p;
+            alpha = Math.min(
+              _occAlpha(px, OCC_ER1, OCC_ER2, OCC_ENTRY_FADE),  // entry pillar (pins 11,12)
+              _occAlpha(px, OCC_R1,  OCC_R2)                     // mid-aisle pillar (pins 7,8)
+            );
+          }
+
+        } else if (elapsed < EMERGE_DUR + WALK_DUR + TURN_DUR) {
+          // Robot turns to face forward at center
+          cx = center.x; cy = center.y;
+          img = (_dir === -1) ? ROBOT_TURN_LEFT_IMG : ROBOT_TURN_RIGHT_IMG;
+          flipX = false; alpha = 1.0;
+
+        } else {
+          // Robot walks toward camera — grows from H_FAR to H_NEAR, fades at very end
+          const p = _eio((elapsed - EMERGE_DUR - WALK_DUR - TURN_DUR) / FORWARD_DUR);
+          cx = center.x + (exit.x - center.x) * p;
+          cy = center.y + (exit.y - center.y) * p;
+          img = ROBOT_FRONT_IMG; flipX = false;
+          paintH = H_FAR + (H_NEAR - H_FAR) * p;
+          alpha  = p > 0.88 ? Math.max(0, 1 - (p - 0.88) / 0.12) : 1.0;
+        }
+
+        if (!img || !img.complete || !img.naturalWidth) return;
+        const dh = paintH * s;
+        const dw = dh * (img.naturalWidth / img.naturalHeight);
+
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+        if (flipX) {
+          ctx.translate(cx, 0);
+          ctx.scale(-1, 1);
+          ctx.drawImage(img, -dw / 2, cy - dh, dw, dh);
+        } else {
+          ctx.drawImage(img, cx - dw / 2, cy - dh, dw, dh);
+        }
+        ctx.restore();
+      }
+
+      return { trigger, draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
     //  Canvas setup
     // ══════════════════════════════════════════════════════════════════════════
     const fxCanvas  = document.getElementById('effects');
@@ -741,7 +910,7 @@
     // ══════════════════════════════════════════════════════════════════════════
     function handleSceneEvent(name) {
       switch (name) {
-        // events added here as they are built
+        case 'robot_procession': robotProcession.trigger(); break;
       }
     }
 
@@ -779,6 +948,8 @@
       floorLines.draw(fxCtx, t);
       // ground fog — mist pooling on the floor; drawn after lines so energy channels glow through it
       groundFog.draw(fxCtx, t);
+      // robot procession — on the floor, in front of fog, behind floating particles
+      robotProcession.draw(fxCtx, now);
       // particle passes (in front)
       pillar1.drawParticles(fxCtx, dt);
       pillar2.drawParticles(fxCtx, dt);

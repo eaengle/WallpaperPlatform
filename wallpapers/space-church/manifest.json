@@ -4,5 +4,6 @@
   "description": "A vast sci-fi gothic cathedral glowing with cosmic energy and alien architecture",
   "tier": "premium",
   "events": [
+    { "name": "robot_procession", "minInterval": 45, "maxInterval": 90, "label": "Robot Procession" }
   ]
 }
