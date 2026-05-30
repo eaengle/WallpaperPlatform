@@ -184,6 +184,9 @@
       let curIdx = 0, nextIdx = 1;
       let switchAt = -1; // initialized on first draw frame to avoid rAF throttle desync
       let fading = false, fadeStart = 0;
+      let _glitching = false, _glitchStart = -1;
+      const GLITCH_DUR  = 3000;
+      const GLITCH_FMSEC = GLITCH_DUR / (imgs.length * 3); // 100ms per frame at 10 imgs × 3 passes
       const MAX_P = 7, parts = [];
 
       function getRect() { return makeSwordRect(ancTLKey, ancTRKey, ancTCKey, ancLowestKey, imgs, offsetPY, scale); }
@@ -234,8 +237,23 @@
         ctx.restore();
       }
 
+      function startGlitch() { _glitching = true; _glitchStart = -1; }
+
       function drawImage(ctx, now) {
         const r = getRect(); if (!r) return;
+
+        if (_glitching) {
+          if (_glitchStart < 0) _glitchStart = now;
+          const elapsed = now - _glitchStart;
+          if (elapsed >= GLITCH_DUR) {
+            _glitching = false; _glitchStart = -1;
+          } else {
+            const gi = imgs[Math.floor(elapsed / GLITCH_FMSEC) % imgs.length];
+            if (gi.complete && gi.naturalWidth) ctx.drawImage(gi, r.x, r.y, r.w, r.h);
+            return;
+          }
+        }
+
         const img0 = imgs[curIdx];
         if (!img0.complete || !img0.naturalWidth) return;
         const { x: dx, y: dy, w: dw, h: dh } = r;
@@ -257,7 +275,7 @@
         }
       }
 
-      return { drawGlow, drawImage, drawParticles };
+      return { drawGlow, drawImage, drawParticles, startGlitch };
     }
 
     // ── Pillar instances ────────────────────────────────────────────────────
@@ -267,6 +285,17 @@
     const pillar4 = makePillarDisplay(ABSTRACT_IMGS_4, 'pillar4TopLeft', 'pillar4TopRight', 'pillar4ImageTop', 'pillar4Lowest', 0, 1.1,    8000);
     const pillar5 = makePillarDisplay(PRIEST_IMGS_5,   'pillar5TopLeft', 'pillar5TopRight', 'pillar5ImageTop', 'pillar5Lowest', 0, 0.972, 10000);
     const pillar6 = makePillarDisplay(ALIEN_IMGS_6,    'pillar6TopLeft', 'pillar6TopRight', 'pillar6ImageTop', 'pillar6Lowest', 0, 1.1,  12000);
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Hologram glitch event — one random pillar rapid-cycles all its images
+    // ══════════════════════════════════════════════════════════════════════════
+    const hologramGlitch = (() => {
+      const PILLARS = [pillar1, pillar2, pillar3, pillar4, pillar5, pillar6];
+      function trigger() {
+        PILLARS[Math.floor(Math.random() * PILLARS.length)].startGlitch();
+      }
+      return { trigger };
+    })();
 
     // ══════════════════════════════════════════════════════════════════════════
     //  Floor energy pulse lines
@@ -1433,6 +1462,7 @@
         case 'portal_surge':        portalSurge.trigger();        break;
         case 'plasma_eruption':     plasmaEruption.trigger();     break;
         case 'cathedral_dimming':   cathedralDimming.trigger();   break;
+        case 'hologram_glitch':     hologramGlitch.trigger();     break;
       }
     }
 
