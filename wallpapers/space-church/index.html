@@ -384,6 +384,125 @@
     const TAU = Math.PI * 2;
 
     // ══════════════════════════════════════════════════════════════════════════
+    //  Back window stars
+    // ══════════════════════════════════════════════════════════════════════════
+    const backWindowStars = (() => {
+      const OUTER = [[713,537],[712,364],[750,319],[839,178],[921,317],[954,364],[957,553]];
+      const INNER = [[728,545],[736,462],[836,318],[922,448],[949,516],[942,552]];
+
+      function pip(px, py, poly) {
+        let inside = false;
+        for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+          const xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
+          if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi))
+            inside = !inside;
+        }
+        return inside;
+      }
+
+      const minX = Math.min(...OUTER.map(p => p[0]));
+      const maxX = Math.max(...OUTER.map(p => p[0]));
+      const minY = Math.min(...OUTER.map(p => p[1]));
+      const maxY = Math.max(...OUTER.map(p => p[1]));
+
+      // Cosmic color palettes: [core, mid, glow]
+      const PALS = [
+        ['255,255,255', '200,215,255', '90,110,255'],   // blue-white
+        ['255,255,255', '190,255,245', '40,200,180'],   // cyan-teal
+        ['255,230,255', '225,160,255', '160,80,255'],   // violet
+        ['255,255,210', '255,225,140', '210,155,50'],   // gold-amber
+        ['255,240,255', '255,165,220', '210,75,160'],   // pink-rose
+        ['210,245,255', '130,205,255', '50,140,245'],   // ice-blue
+        ['255,255,255', '200,255,210', '60,200,120'],   // mint-green
+      ];
+
+      const COUNT = 80;
+      const stars = [];
+      let tries = 0;
+      while (stars.length < COUNT && tries < 20000) {
+        tries++;
+        const px = minX + Math.random() * (maxX - minX);
+        const py = minY + Math.random() * (maxY - minY);
+        if (!pip(px, py, OUTER) || pip(px, py, INNER)) continue;
+        const roll = Math.random();
+        stars.push({
+          px, py,
+          phase: Math.random() * TAU,
+          freq:  0.0005 + Math.random() * 0.0015,
+          r:     roll < 0.07 ? rnd(2.5, 4.5) : roll < 0.25 ? rnd(1.2, 2.5) : rnd(0.4, 1.2),
+          tier:  roll < 0.07 ? 2 : roll < 0.25 ? 1 : 0,
+          pal:   Math.floor(Math.random() * PALS.length),
+        });
+      }
+
+      function draw(ctx, t) {
+        if (!imgNaturalW) return;
+        ctx.save();
+
+        // Clip to outer arch minus inner obstruction (even-odd)
+        ctx.beginPath();
+        const os = OUTER.map(([px, py]) => paintToCanvas(px, py));
+        ctx.moveTo(os[0].x, os[0].y);
+        for (let i = 1; i < os.length; i++) ctx.lineTo(os[i].x, os[i].y);
+        ctx.closePath();
+        const is = INNER.map(([px, py]) => paintToCanvas(px, py));
+        ctx.moveTo(is[0].x, is[0].y);
+        for (let i = 1; i < is.length; i++) ctx.lineTo(is[i].x, is[i].y);
+        ctx.closePath();
+        ctx.clip('evenodd');
+
+        ctx.globalCompositeOperation = 'screen';
+        const { s } = coverScale();
+
+        for (const star of stars) {
+          const sc = paintToCanvas(star.px, star.py);
+          const pulse = 0.5 + 0.5 * Math.sin(t * star.freq + star.phase);
+          const r = star.r * s;
+          const [core, mid, glow] = PALS[star.pal];
+
+          if (star.tier === 2) {
+            // Bright star: glow + small cross sparkle
+            const alpha = 0.5 + pulse * 0.5;
+            const gr = ctx.createRadialGradient(sc.x, sc.y, 0, sc.x, sc.y, r * 5);
+            gr.addColorStop(0,   `rgba(255,255,255,${alpha})`);
+            gr.addColorStop(0.2, `rgba(${mid},${alpha * 0.7})`);
+            gr.addColorStop(0.6, `rgba(${glow},${alpha * 0.25})`);
+            gr.addColorStop(1,   `rgba(${glow},0)`);
+            ctx.fillStyle = gr;
+            ctx.beginPath(); ctx.arc(sc.x, sc.y, r * 5, 0, TAU); ctx.fill();
+            // Small cross spikes — length r*2.5, thin
+            ctx.strokeStyle = `rgba(${core},${alpha * 0.55})`;
+            ctx.lineWidth = r * 0.2; ctx.lineCap = 'round';
+            ctx.beginPath(); ctx.moveTo(sc.x - r * 2.5, sc.y); ctx.lineTo(sc.x + r * 2.5, sc.y); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(sc.x, sc.y - r * 2.5); ctx.lineTo(sc.x, sc.y + r * 2.5); ctx.stroke();
+          } else if (star.tier === 1) {
+            // Medium star
+            const alpha = 0.3 + pulse * 0.55;
+            const gr = ctx.createRadialGradient(sc.x, sc.y, 0, sc.x, sc.y, r * 4);
+            gr.addColorStop(0,   `rgba(255,255,255,${alpha})`);
+            gr.addColorStop(0.3, `rgba(${mid},${alpha * 0.5})`);
+            gr.addColorStop(1,   `rgba(${glow},0)`);
+            ctx.fillStyle = gr;
+            ctx.beginPath(); ctx.arc(sc.x, sc.y, r * 4, 0, TAU); ctx.fill();
+          } else {
+            // Small star
+            const alpha = 0.15 + pulse * 0.65;
+            const gr = ctx.createRadialGradient(sc.x, sc.y, 0, sc.x, sc.y, r * 3);
+            gr.addColorStop(0,   `rgba(255,255,255,${alpha})`);
+            gr.addColorStop(0.4, `rgba(${mid},${alpha * 0.35})`);
+            gr.addColorStop(1,   `rgba(${glow},0)`);
+            ctx.fillStyle = gr;
+            ctx.beginPath(); ctx.arc(sc.x, sc.y, r * 3, 0, TAU); ctx.fill();
+          }
+        }
+
+        ctx.restore();
+      }
+
+      return { draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
     //  Event dispatch
     // ══════════════════════════════════════════════════════════════════════════
     function handleSceneEvent(name) {
@@ -404,6 +523,8 @@
     // ══════════════════════════════════════════════════════════════════════════
     function drawEffects(dt, t, now) {
       fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
+      // back window stars — drawn first, appear inside the cosmic arch behind the structure
+      backWindowStars.draw(fxCtx, t);
       // pillar glow passes (behind images)
       pillar1.drawGlow(fxCtx, now);
       pillar2.drawGlow(fxCtx, now);
