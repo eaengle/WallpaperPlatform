@@ -1014,22 +1014,20 @@
     })();
 
     // ══════════════════════════════════════════════════════════════════════════
-    //  Scene brightness — candlelight flicker via #night-overlay.
+    //  Scene brightness — slow breathing fade via #night-overlay.
     //  Canvas effects (z-index 2) sit above the overlay (z-index 1) and stay
-    //  bright, standing out more during dim phases.
-    //  Three layered sinusoids (~1 Hz, ~2.5 Hz, ~5 Hz) with phase modulation
-    //  give the organic, non-repeating character of a real flame.
+    //  bright. A single slow sine (~7s cycle) with gentle 48s phase modulation
+    //  gives a quiet, organic rhythm like a long deep breath.
     // ══════════════════════════════════════════════════════════════════════════
     const sceneBrightness = (() => {
       const overlay = document.getElementById('night-overlay');
       function update(t) {
-        const f1  = Math.sin(t * 0.0016 + Math.sin(t * 0.00075) * 2.1);
-        const f2  = Math.sin(t * 0.0040 + Math.sin(t * 0.0018) * 1.6) * 0.55;
-        const f3  = Math.sin(t * 0.0079 + 0.9) * 0.28;
-        const raw = (f1 + f2 + f3) / 1.83;         // ≈ [-1, 1]
-        const opacity = Math.max(0, -raw) * 0.40;   // dips only; 0 at bright peaks
+        // breathe: 0 (bright/inhale) → 1 (dim/exhale), ~7s full cycle
+        // phase-modulation at ~48s period keeps the rhythm subtly varied
+        const breathe = 0.5 + 0.5 * Math.sin(t * 0.00045 + Math.sin(t * 0.000065) * 0.4);
+        const opacity = breathe * 0.55;             // max 55% overlay opacity
         overlay.style.opacity = opacity.toFixed(3);
-        _mul = 1 - opacity / 0.40;                  // 1.0 = bright, 0.0 = darkest
+        _mul = 1 - breathe;                         // 1.0 = bright, 0.0 = darkest
       }
       let _mul = 1.0;
       function getMul() { return _mul; }
