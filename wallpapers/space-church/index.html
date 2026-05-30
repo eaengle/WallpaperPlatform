@@ -289,7 +289,7 @@
 
         // ── Ambient base glow on visible segments only ──────────────────────
         const breathe = 0.5 + 0.5 * Math.sin(t * 0.00083);
-        const baseA   = 0.09 + breathe * 0.05;
+        const baseA   = 0.05 + breathe * 0.025;
         for (let i = 0; i < segs.length; i++) {
           if (!segs[i]) continue;
           const p0 = pts[i], p1 = pts[i+1];
@@ -302,7 +302,7 @@
         }
 
         // ── Two staggered traveling pulses (capsule shape) ──────────────────
-        const PR     = Math.max(3, total * 0.022);
+        const PR     = Math.max(3, Math.min(6, total * 0.022));
         const CAP_HL = PR * 1.2; // half-length of the capsule body
         for (let k = 0; k < 2; k++) {
           const frac = (t * speed + phase + k * 0.5) % 1.0;
@@ -329,7 +329,7 @@
 
           // Flat-top brightness envelope
           const env = clamp(frac * 8, 0, 1) * clamp((1 - frac) * 8, 0, 1);
-          const pA  = env * 0.92;
+          const pA  = env * 0.55;
           if (pA < 0.01) continue;
 
           // Clamp each arm against segment boundaries so the capsule shrinks
