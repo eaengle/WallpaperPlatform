@@ -99,6 +99,8 @@
       pillar6ImageTop: [435, 480],   // pin 5 — top-center of pillar 6 display area
       pillar6Lowest:   [444, 647],   // pin 3 — lowest point of pillar 6 top surface
 
+      // Plasma ball — centroid of the INNER arch polygon (the throne/idol silhouette)
+      plasmaCenter: [836, 473],
     };
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -361,6 +363,169 @@
     })();
 
     // ══════════════════════════════════════════════════════════════════════════
+    //  Plasma ball — central throne/idol
+    // ══════════════════════════════════════════════════════════════════════════
+    const plasmaBall = (() => {
+      const RADIUS_PX     = 160;  // ball radius in paint-pixels
+      const TENDRIL_N     = 4;    // main plasma arms
+      const BRANCH_CHANCE = 0.42; // probability of secondary branch per arm
+      const REGEN_MS      = 2000; // how often a new target shape is picked (= TRANS_MS = continuous flow)
+      const TRANS_MS      = 2000; // how long the morph from old→new takes
+
+      let _arms    = [];   // {fromPts, toPts, fromBpts, toBpts, phase}
+      let _regenAt = -9999;
+
+      function _zigzag(x0, y0, x1, y1, depth, spread, pts) {
+        if (depth === 0) {
+          if (pts.length === 0) pts.push(x0, y0);
+          pts.push(x1, y1);
+          return;
+        }
+        const mx = (x0 + x1) / 2 + (Math.random() - 0.5) * spread;
+        const my = (y0 + y1) / 2 + (Math.random() - 0.5) * spread;
+        _zigzag(x0, y0, mx, my, depth - 1, spread * 0.58, pts);
+        _zigzag(mx, my, x1, y1, depth - 1, spread * 0.58, pts);
+      }
+
+      function _stroke(ctx, pts, lw, alpha, rgb) {
+        if (pts.length < 4) return;
+        ctx.strokeStyle = `rgba(${rgb},${alpha})`;
+        ctx.lineWidth   = lw;
+        ctx.lineCap     = 'round';
+        ctx.lineJoin    = 'round';
+        ctx.beginPath();
+        ctx.moveTo(pts[0], pts[1]);
+        for (let i = 2; i < pts.length; i += 2) ctx.lineTo(pts[i], pts[i + 1]);
+        ctx.stroke();
+      }
+
+      // Lerp two flat [x,y,x,y,...] arrays element-wise
+      function _lerpPts(a, b, p) {
+        const out = new Array(a.length);
+        for (let i = 0; i < a.length; i++) out[i] = a[i] + (b[i] - a[i]) * p;
+        return out;
+      }
+
+      function _ease(p) { return p * p * (3 - 2 * p); } // smoothstep
+
+      function _makePath(c, R, drift, k) {
+        const ang = (k / TENDRIL_N) * TAU + drift + (Math.random() - 0.5) * 0.25;
+        const ex  = c.x + Math.cos(ang) * R;
+        const ey  = c.y + Math.sin(ang) * R;
+        const pts = [];
+        _zigzag(c.x, c.y, ex, ey, 4, R * 0.30, pts);
+        let bpts = null;
+        if (Math.random() < BRANCH_CHANCE) {
+          const bi  = Math.floor(2 + Math.random() * (pts.length / 2 - 3)) * 2;
+          const bx0 = pts[bi], by0 = pts[bi + 1];
+          const bang = ang + (Math.random() - 0.5) * 1.7;
+          const bR   = R * (0.28 + Math.random() * 0.38);
+          bpts = [];
+          _zigzag(bx0, by0, bx0 + Math.cos(bang) * bR, by0 + Math.sin(bang) * bR, 3, bR * 0.36, bpts);
+        }
+        return { pts, bpts };
+      }
+
+      function _regen(c, R, drift) {
+        if (_arms.length === 0) {
+          // First build — fromPts = toPts so no initial morph
+          for (let k = 0; k < TENDRIL_N; k++) {
+            const { pts, bpts } = _makePath(c, R, drift, k);
+            _arms.push({ fromPts: pts, toPts: pts, fromBpts: bpts, toBpts: bpts, phase: Math.random() * TAU });
+          }
+        } else {
+          // Advance: current target becomes new source, generate a fresh target
+          for (let k = 0; k < _arms.length; k++) {
+            const arm = _arms[k];
+            arm.fromPts  = arm.toPts;
+            arm.fromBpts = arm.toBpts;
+            const { pts, bpts } = _makePath(c, R, drift, k);
+            arm.toPts  = pts;
+            arm.toBpts = bpts;
+          }
+        }
+      }
+
+      function draw(ctx, t) {
+        if (!ANCHORS.plasmaCenter || !imgNaturalW) return;
+        const { s } = coverScale();
+        const c = paintToCanvas(ANCHORS.plasmaCenter[0], ANCHORS.plasmaCenter[1]);
+        const R = RADIUS_PX * s;
+        const drift = t * 0.000048;
+
+        if (t - _regenAt > REGEN_MS) { _regen(c, R, drift); _regenAt = t; }
+        if (_arms.length === 0) return;
+
+        // Smoothstep transition progress within current cycle
+        const transP = _ease(Math.min(1, (t - _regenAt) / TRANS_MS));
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+
+        // Ambient sphere glow
+        const pulse = 0.5 + 0.5 * Math.sin(t * 0.00097);
+        const sph = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, R * 1.15);
+        sph.addColorStop(0,    `rgba(230,180,255,${0.32 + pulse * 0.18})`);
+        sph.addColorStop(0.25, `rgba(160, 80,255,${0.22 + pulse * 0.10})`);
+        sph.addColorStop(0.65, `rgba( 80, 20,200,${0.10})`);
+        sph.addColorStop(1,    'rgba(30,0,100,0)');
+        ctx.fillStyle = sph;
+        ctx.beginPath(); ctx.arc(c.x, c.y, R * 1.15, 0, TAU); ctx.fill();
+
+        // Glass sphere ring
+        ctx.strokeStyle = `rgba(190,130,255,${0.20 + pulse * 0.09})`;
+        ctx.lineWidth   = s * 1.5;
+        ctx.beginPath(); ctx.arc(c.x, c.y, R, 0, TAU); ctx.stroke();
+        // Specular highlight arc (upper-left quadrant)
+        ctx.strokeStyle = `rgba(240,210,255,${0.28 + pulse * 0.10})`;
+        ctx.lineWidth   = s * 0.7;
+        ctx.beginPath(); ctx.arc(c.x, c.y, R, Math.PI * 1.15, Math.PI * 1.72); ctx.stroke();
+
+        // Draw tendrils — each point lerped between fromPts and toPts each frame
+        for (const { fromPts, toPts, fromBpts, toBpts, phase } of _arms) {
+          const fl  = 0.65 + 0.35 * Math.sin(t * 0.0018 + phase);
+          const pts = _lerpPts(fromPts, toPts, transP);
+          _stroke(ctx, pts, s * 3.8, fl * 0.20, '140,60,255');
+          _stroke(ctx, pts, s * 1.5, fl * 0.58, '185,105,255');
+          _stroke(ctx, pts, s * 0.5, fl * 0.92, '235,210,255');
+
+          // Branch: lerp if both frames have one, else fade in/out
+          if (fromBpts && toBpts) {
+            const bpts = _lerpPts(fromBpts, toBpts, transP);
+            _stroke(ctx, bpts, s * 2.4, fl * 0.17, '155,80,255');
+            _stroke(ctx, bpts, s * 0.9, fl * 0.50, '205,155,255');
+            _stroke(ctx, bpts, s * 0.3, fl * 0.85, '245,225,255');
+          } else if (toBpts) {
+            ctx.save(); ctx.globalAlpha = transP;
+            _stroke(ctx, toBpts, s * 2.4, fl * 0.17, '155,80,255');
+            _stroke(ctx, toBpts, s * 0.9, fl * 0.50, '205,155,255');
+            _stroke(ctx, toBpts, s * 0.3, fl * 0.85, '245,225,255');
+            ctx.restore();
+          } else if (fromBpts) {
+            ctx.save(); ctx.globalAlpha = 1 - transP;
+            _stroke(ctx, fromBpts, s * 2.4, fl * 0.17, '155,80,255');
+            _stroke(ctx, fromBpts, s * 0.9, fl * 0.50, '205,155,255');
+            _stroke(ctx, fromBpts, s * 0.3, fl * 0.85, '245,225,255');
+            ctx.restore();
+          }
+        }
+
+        // Inner core
+        const corA = 0.62 + pulse * 0.38;
+        const core = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, R * 0.20);
+        core.addColorStop(0,    `rgba(255,248,255,${corA})`);
+        core.addColorStop(0.45, `rgba(215,175,255,${corA * 0.55})`);
+        core.addColorStop(1,    'rgba(140,70,255,0)');
+        ctx.fillStyle = core;
+        ctx.beginPath(); ctx.arc(c.x, c.y, R * 0.20, 0, TAU); ctx.fill();
+
+        ctx.restore();
+      }
+
+      return { draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
     //  Canvas setup
     // ══════════════════════════════════════════════════════════════════════════
     const fxCanvas  = document.getElementById('effects');
@@ -525,6 +690,8 @@
       fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
       // back window stars — drawn first, appear inside the cosmic arch behind the structure
       backWindowStars.draw(fxCtx, t);
+      // plasma ball — around the central throne, in front of the window
+      plasmaBall.draw(fxCtx, t);
       // pillar glow passes (behind images)
       pillar1.drawGlow(fxCtx, now);
       pillar2.drawGlow(fxCtx, now);
