@@ -887,7 +887,8 @@
           const c   = paintToCanvas(px + driftX, py + driftY);
           const crx = rx * s, cry = ry * s;
           const breathe = 0.72 + 0.28 * Math.sin(t * 0.00062 + phase * 0.8);
-          const a = baseAlpha * breathe;
+          const fogMul = 0.4 + 0.6 * sceneBrightness.getMul();
+          const a = baseAlpha * breathe * fogMul;
           ctx.save();
           ctx.translate(c.x, c.y);
           ctx.scale(crx, cry); // unit circle → ellipse of crx × cry px
@@ -903,6 +904,29 @@
       }
 
       return { draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Scene brightness — candlelight flicker via #night-overlay.
+    //  Canvas effects (z-index 2) sit above the overlay (z-index 1) and stay
+    //  bright, standing out more during dim phases.
+    //  Three layered sinusoids (~1 Hz, ~2.5 Hz, ~5 Hz) with phase modulation
+    //  give the organic, non-repeating character of a real flame.
+    // ══════════════════════════════════════════════════════════════════════════
+    const sceneBrightness = (() => {
+      const overlay = document.getElementById('night-overlay');
+      function update(t) {
+        const f1  = Math.sin(t * 0.0016 + Math.sin(t * 0.00075) * 2.1);
+        const f2  = Math.sin(t * 0.0040 + Math.sin(t * 0.0018) * 1.6) * 0.55;
+        const f3  = Math.sin(t * 0.0079 + 0.9) * 0.28;
+        const raw = (f1 + f2 + f3) / 1.83;         // ≈ [-1, 1]
+        const opacity = Math.max(0, -raw) * 0.40;   // dips only; 0 at bright peaks
+        overlay.style.opacity = opacity.toFixed(3);
+        _mul = 1 - opacity / 0.40;                  // 1.0 = bright, 0.0 = darkest
+      }
+      let _mul = 1.0;
+      function getMul() { return _mul; }
+      return { update, getMul };
     })();
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -925,6 +949,7 @@
     //  Draw order
     // ══════════════════════════════════════════════════════════════════════════
     function drawEffects(dt, t, now) {
+      sceneBrightness.update(t);
       fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
       // back window stars — drawn first, appear inside the cosmic arch behind the structure
       backWindowStars.draw(fxCtx, t);
