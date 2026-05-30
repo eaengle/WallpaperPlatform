@@ -150,7 +150,7 @@
     function makePillarDisplay(imgs, ancTLKey, ancTRKey, ancTCKey, ancLowestKey = null, offsetPY = 0, scale = 1.0, offsetMS = 0) {
       const SWITCH_MS = 12000, FADE_MS = 1000;
       let curIdx = 0, nextIdx = 1;
-      let switchAt = performance.now() + offsetMS;
+      let switchAt = -1; // initialized on first draw frame to avoid rAF throttle desync
       let fading = false, fadeStart = 0;
       const MAX_P = 7, parts = [];
 
@@ -207,6 +207,7 @@
         const img0 = imgs[curIdx];
         if (!img0.complete || !img0.naturalWidth) return;
         const { x: dx, y: dy, w: dw, h: dh } = r;
+        if (switchAt < 0) switchAt = now + offsetMS;
         if (!fading && now >= switchAt) { fading = true; fadeStart = now; }
         if (!fading) {
           ctx.drawImage(img0, dx, dy, dw, dh);
