@@ -144,10 +144,10 @@
       return { x: (sTL.x + sTR.x) / 2 - w / 2, y, w, h };
     }
 
-    function makePillarDisplay(imgs, ancTLKey, ancTRKey, ancTCKey, ancLowestKey = null, offsetPY = 0, scale = 1.0) {
-      const SWITCH_MS = 10000, FADE_MS = 1000;
+    function makePillarDisplay(imgs, ancTLKey, ancTRKey, ancTCKey, ancLowestKey = null, offsetPY = 0, scale = 1.0, offsetMS = 0) {
+      const SWITCH_MS = 12000, FADE_MS = 1000;
       let curIdx = 0, nextIdx = 1;
-      let switchAt = performance.now() + SWITCH_MS;
+      let switchAt = performance.now() + offsetMS;
       let fading = false, fadeStart = 0;
       const MAX_P = 7, parts = [];
 
@@ -225,12 +225,12 @@
     }
 
     // ── Pillar instances ────────────────────────────────────────────────────
-    const pillar1 = makePillarDisplay(SWORD_IMGS_1, 'pillar1TopLeft', 'pillar1TopRight', 'pillar1ImageTop', 'pillar1Lowest', 0, 1.0);
-    const pillar2 = makePillarDisplay(SOLDIER_IMGS_2, 'pillar2TopLeft', 'pillar2TopRight', 'pillar2ImageTop', 'pillar2Lowest', 0, 1.25);
-    const pillar3 = makePillarDisplay(ANGEL_IMGS_3,    'pillar3TopLeft', 'pillar3TopRight', 'pillar3ImageTop', 'pillar3Lowest', 0, 1.0);
-    const pillar4 = makePillarDisplay(ABSTRACT_IMGS_4, 'pillar4TopLeft', 'pillar4TopRight', 'pillar4ImageTop', 'pillar4Lowest', 0, 1.1);
-    const pillar5 = makePillarDisplay(PRIEST_IMGS_5,   'pillar5TopLeft', 'pillar5TopRight', 'pillar5ImageTop', 'pillar5Lowest', 0, 0.972);
-    const pillar6 = makePillarDisplay(ALIEN_IMGS_6,    'pillar6TopLeft', 'pillar6TopRight', 'pillar6ImageTop', 'pillar6Lowest', 0, 1.1);
+    const pillar1 = makePillarDisplay(SWORD_IMGS_1,    'pillar1TopLeft', 'pillar1TopRight', 'pillar1ImageTop', 'pillar1Lowest', 0, 1.0,    2000);
+    const pillar2 = makePillarDisplay(SOLDIER_IMGS_2,  'pillar2TopLeft', 'pillar2TopRight', 'pillar2ImageTop', 'pillar2Lowest', 0, 1.25,   4000);
+    const pillar3 = makePillarDisplay(ANGEL_IMGS_3,    'pillar3TopLeft', 'pillar3TopRight', 'pillar3ImageTop', 'pillar3Lowest', 0, 1.0,    6000);
+    const pillar4 = makePillarDisplay(ABSTRACT_IMGS_4, 'pillar4TopLeft', 'pillar4TopRight', 'pillar4ImageTop', 'pillar4Lowest', 0, 1.1,    8000);
+    const pillar5 = makePillarDisplay(PRIEST_IMGS_5,   'pillar5TopLeft', 'pillar5TopRight', 'pillar5ImageTop', 'pillar5Lowest', 0, 0.972, 10000);
+    const pillar6 = makePillarDisplay(ALIEN_IMGS_6,    'pillar6TopLeft', 'pillar6TopRight', 'pillar6ImageTop', 'pillar6Lowest', 0, 1.1,  12000);
 
     // ══════════════════════════════════════════════════════════════════════════
     //  Canvas setup
