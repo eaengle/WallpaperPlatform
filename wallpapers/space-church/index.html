@@ -98,6 +98,7 @@
       pillar6TopRight: [481, 641],   // pin 4 — rightmost corner of pillar 6 top surface
       pillar6ImageTop: [435, 480],   // pin 5 — top-center of pillar 6 display area
       pillar6Lowest:   [444, 647],   // pin 3 — lowest point of pillar 6 top surface
+
     };
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -233,6 +234,133 @@
     const pillar6 = makePillarDisplay(ALIEN_IMGS_6,    'pillar6TopLeft', 'pillar6TopRight', 'pillar6ImageTop', 'pillar6Lowest', 0, 1.1,  12000);
 
     // ══════════════════════════════════════════════════════════════════════════
+    //  Floor energy pulse lines
+    // ══════════════════════════════════════════════════════════════════════════
+    const floorLines = (() => {
+      // Each line definition:
+      //   points — [px,py] paint-coord waypoints along the full path (viewer→altar)
+      //   segs   — boolean per segment between consecutive points: true=visible, false=behind a pillar
+      // Pulses travel at constant speed along the whole path; drawing is skipped
+      // during occluded segments so they appear to pass through the pillars.
+      // null entries = line not yet measured.
+      const DEFS = [
+        {
+          // Left inner line — passes behind pillars 2 (near), 6 (mid), 1 (far left)
+          points: [[7,883],[137,828],[274,784],[389,742],[469,715],[555,687]],
+          segs:   [true, false, true, false, true],
+          speed: 0.00012, phase: 0.0,
+        },
+        {
+          // Right inner line — passes behind pillars 5 (near), 4 (mid), 3 (far right)
+          points: [[1668,885],[1534,829],[1398,783],[1287,744],[1201,716],[1114,683]],
+          segs:   [true, false, true, false, true],
+          speed: 0.00012, phase: 0.5,
+        },
+        { points: [[466,892],[723,679]],  segs: [true], speed: 0.00013, phase: 0.15 }, // Left outer A
+        { points: [[573,895],[755,678]],  segs: [true], speed: 0.00015, phase: 0.65 }, // Left outer B
+        { points: [[1102,897],[920,681]], segs: [true], speed: 0.00014, phase: 0.38 }, // Right outer A
+        { points: [[1203,892],[950,679]], segs: [true], speed: 0.00012, phase: 0.88 }, // Right outer B
+      ];
+
+      const R = 190, G = 100, B = 255; // electric purple
+
+      function draw(ctx, t) {
+        for (const def of DEFS) {
+          if (!def) continue;
+          _drawLine(ctx, def, t);
+        }
+      }
+
+      function _drawLine(ctx, def, t) {
+        const { points, segs, speed, phase } = def;
+        const pts = points.map(([px, py]) => paintToCanvas(px, py));
+
+        // Cumulative screen-space distances along full path
+        const dists = [0];
+        for (let i = 0; i < pts.length - 1; i++) {
+          const dx = pts[i+1].x - pts[i].x, dy = pts[i+1].y - pts[i].y;
+          dists.push(dists[i] + Math.sqrt(dx*dx + dy*dy));
+        }
+        const total = dists[dists.length - 1];
+        if (total < 1) return;
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+
+        // ── Ambient base glow on visible segments only ──────────────────────
+        const breathe = 0.5 + 0.5 * Math.sin(t * 0.00083);
+        const baseA   = 0.09 + breathe * 0.05;
+        for (let i = 0; i < segs.length; i++) {
+          if (!segs[i]) continue;
+          const p0 = pts[i], p1 = pts[i+1];
+          const gw = [12, 5, 2], ga = [baseA * 0.22, baseA * 0.50, baseA];
+          for (let p = 0; p < 3; p++) {
+            ctx.strokeStyle = `rgba(${R},${G},${B},${ga[p]})`;
+            ctx.lineWidth = gw[p]; ctx.lineCap = 'round';
+            ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
+          }
+        }
+
+        // ── Two staggered traveling pulses (capsule shape) ──────────────────
+        const PR     = Math.max(3, total * 0.022);
+        const CAP_HL = PR * 1.2; // half-length of the capsule body
+        for (let k = 0; k < 2; k++) {
+          const frac = (t * speed + phase + k * 0.5) % 1.0;
+          const dist = frac * total;
+
+          // Find which segment the pulse currently occupies
+          let seg = segs.length - 1;
+          for (let i = 0; i < segs.length; i++) {
+            if (dist < dists[i + 1]) { seg = i; break; }
+          }
+          if (!segs[seg]) continue; // behind a pillar — skip drawing
+
+          // Interpolate position within the segment
+          const segLen = dists[seg+1] - dists[seg];
+          const sf     = segLen > 0 ? (dist - dists[seg]) / segLen : 0;
+          const p0 = pts[seg], p1 = pts[seg+1];
+          const px = p0.x + (p1.x - p0.x) * sf;
+          const py = p0.y + (p1.y - p0.y) * sf;
+
+          // Unit direction vector for capsule orientation
+          const sdx = p1.x - p0.x, sdy = p1.y - p0.y;
+          const sl  = Math.sqrt(sdx*sdx + sdy*sdy) || 1;
+          const nx  = sdx / sl, ny = sdy / sl;
+
+          // Flat-top brightness envelope
+          const env = clamp(frac * 8, 0, 1) * clamp((1 - frac) * 8, 0, 1);
+          const pA  = env * 0.92;
+          if (pA < 0.01) continue;
+
+          // Clamp each arm against segment boundaries so the capsule shrinks
+          // into pillars and grows back out rather than popping on/off.
+          const frontArm = Math.min(CAP_HL, dists[seg+1] - dist);
+          const backArm  = Math.min(CAP_HL, dist - dists[seg]);
+          const cx0 = px - nx * backArm,  cy0 = py - ny * backArm;
+          const cx1 = px + nx * frontArm, cy1 = py + ny * frontArm;
+
+          ctx.lineCap = 'round';
+          // Outer glow — wide, soft
+          ctx.strokeStyle = `rgba(${R},${G},${B},${pA * 0.22})`;
+          ctx.lineWidth   = PR * 4.5;
+          ctx.beginPath(); ctx.moveTo(cx0, cy0); ctx.lineTo(cx1, cy1); ctx.stroke();
+          // Mid body
+          ctx.strokeStyle = `rgba(${R},${G},${B},${pA * 0.60})`;
+          ctx.lineWidth   = PR * 1.8;
+          ctx.beginPath(); ctx.moveTo(cx0, cy0); ctx.lineTo(cx1, cy1); ctx.stroke();
+          // Bright white core
+          ctx.strokeStyle = `rgba(255,230,255,${pA})`;
+          ctx.lineWidth   = PR * 0.45;
+          ctx.beginPath(); ctx.moveTo(cx0, cy0); ctx.lineTo(cx1, cy1); ctx.stroke();
+        }
+
+        ctx.restore();
+      }
+
+      return { draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
     //  Canvas setup
     // ══════════════════════════════════════════════════════════════════════════
     const fxCanvas  = document.getElementById('effects');
@@ -276,20 +404,22 @@
     // ══════════════════════════════════════════════════════════════════════════
     function drawEffects(dt, t, now) {
       fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
-      // glow passes (behind images)
+      // pillar glow passes (behind images)
       pillar1.drawGlow(fxCtx, now);
       pillar2.drawGlow(fxCtx, now);
       pillar3.drawGlow(fxCtx, now);
       pillar4.drawGlow(fxCtx, now);
       pillar5.drawGlow(fxCtx, now);
       pillar6.drawGlow(fxCtx, now);
-      // image passes
+      // pillar image passes
       pillar1.drawImage(fxCtx, now);
       pillar2.drawImage(fxCtx, now);
       pillar3.drawImage(fxCtx, now);
       pillar4.drawImage(fxCtx, now);
       pillar5.drawImage(fxCtx, now);
       pillar6.drawImage(fxCtx, now);
+      // floor energy lines — occlusion handled per-segment inside the IIFE
+      floorLines.draw(fxCtx, t);
       // particle passes (in front)
       pillar1.drawParticles(fxCtx, dt);
       pillar2.drawParticles(fxCtx, dt);
