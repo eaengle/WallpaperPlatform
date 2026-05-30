@@ -146,6 +146,11 @@
     const ROBOT_TURN_RIGHT_IMG = _loadImg('robot_turn_right.png'); // sprite 5 — right-entry turn
     const ROBOT_FRONT_IMG      = _loadImg('robot_front.png');      // sprite 10 — forward movement
 
+    // Float robot sprites (green chroma-keyed via Pillow)
+    const FLOAT_ROBOT_DESCENT_IMG = _loadImg('float_robot_descent.png'); // front_view(1) — descent
+    const FLOAT_ROBOT_SIDE_IMG    = _loadImg('float_robot_side.png');    // side_view(6)  — lateral float
+    const FLOAT_ROBOT_LOOK_IMG    = _loadImg('float_robot_look.png');    // front_view(9) — facing camera
+
     // ══════════════════════════════════════════════════════════════════════════
     //  Pillar display factory
     // ══════════════════════════════════════════════════════════════════════════
@@ -696,6 +701,108 @@
     })();
 
     // ══════════════════════════════════════════════════════════════════════════
+    //  Float robot descent event
+    //
+    //  An orb-drone descends from above on the left or right side of the nave,
+    //  glides laterally to centre, faces the camera, then exits back to its
+    //  entry side. Phases: DESCEND (front_view 1) → FLOAT (side_view 6) →
+    //  LOOK (front_view 9) → EXIT (side_view 6). Right-side entry uses a
+    //  horizontal mirror of each sprite.
+    // ══════════════════════════════════════════════════════════════════════════
+    const floatRobotDescent = (() => {
+      const DESCEND_DUR = 3000;
+      const FLOAT_DUR   = 4000;
+      const LOOK_DUR    = 3000;
+      const EXIT_DUR    = 3500;
+      const TOTAL_DUR   = DESCEND_DUR + FLOAT_DUR + LOOK_DUR + EXIT_DUR;
+
+      // Paint-pixel positions — freely floating, not tied to scene features
+      const LEFT_X   = 250;   // left-side entry x (between wall and pillar 2)
+      const RIGHT_X  = 1422;  // right-side entry x (1672 − 250, mirror)
+      const CENTER_X = 836;   // cathedral midline
+      const FLOAT_Y  = 500;   // bottom edge of robot sprite in paint-px
+      const PAINT_H  = 160;   // robot sprite height in paint-px
+
+      let _active = false, _startAt = -1, _dir = 0; // dir: −1=from left, 1=from right
+
+      function trigger() {
+        if (_active) return;
+        _dir     = Math.random() < 0.5 ? -1 : 1;
+        _active  = true;
+        _startAt = -1;
+      }
+
+      function _eio(t) { return t < 0.5 ? 2*t*t : -1+(4-2*t)*t; }
+
+      function draw(ctx, now) {
+        if (!_active || !imgNaturalW) return;
+        if (_startAt < 0) _startAt = now;
+        const elapsed = now - _startAt;
+        if (elapsed >= TOTAL_DUR) { _active = false; return; }
+
+        const { s } = coverScale();
+        const dh = PAINT_H * s;
+
+        const entryX    = _dir === -1 ? LEFT_X : RIGHT_X;
+        const sidePos   = paintToCanvas(entryX,   FLOAT_Y);
+        const centerPos = paintToCanvas(CENTER_X, FLOAT_Y);
+
+        let img, cx, cy, alpha = 1.0, flipX = false;
+
+        if (elapsed < DESCEND_DUR) {
+          // Descend: cy travels from 0 (off-screen top edge) down to sidePos.y
+          const p = _eio(elapsed / DESCEND_DUR);
+          img   = FLOAT_ROBOT_DESCENT_IMG;
+          cx    = sidePos.x;
+          cy    = sidePos.y * p;
+          alpha = Math.min(1, elapsed / 600); // fade in over first 600ms
+          flipX = _dir === 1;                 // mirror for right-side
+
+        } else if (elapsed < DESCEND_DUR + FLOAT_DUR) {
+          // Float sideways to centre using side sprite
+          const p = _eio((elapsed - DESCEND_DUR) / FLOAT_DUR);
+          img   = FLOAT_ROBOT_SIDE_IMG;
+          cx    = sidePos.x + (centerPos.x - sidePos.x) * p;
+          cy    = sidePos.y;
+          flipX = _dir === 1; // left→right: face right (natural); right→left: face left (flip)
+
+        } else if (elapsed < DESCEND_DUR + FLOAT_DUR + LOOK_DUR) {
+          // Hover at centre, face camera, gentle bob
+          const lookT = elapsed - DESCEND_DUR - FLOAT_DUR;
+          img = FLOAT_ROBOT_LOOK_IMG;
+          cx  = centerPos.x;
+          cy  = centerPos.y + Math.sin(lookT * 0.0028) * dh * 0.05;
+
+        } else {
+          // Exit: float off-screen on the OPPOSITE side from entry
+          const p      = _eio((elapsed - DESCEND_DUR - FLOAT_DUR - LOOK_DUR) / EXIT_DUR);
+          const exitCX = _dir === -1 ? window.innerWidth + dh : -dh; // left-entry exits right, right-entry exits left
+          img   = FLOAT_ROBOT_SIDE_IMG;
+          cx    = centerPos.x + (exitCX - centerPos.x) * p;
+          cy    = centerPos.y;
+          flipX = _dir === 1; // exiting right (left-entry): face right (natural); exiting left (right-entry): face left (flip)
+          alpha = p > 0.85 ? Math.max(0, 1 - (p - 0.85) / 0.15) : 1.0;
+        }
+
+        if (!img || !img.complete || !img.naturalWidth) return;
+        const dw = dh * (img.naturalWidth / img.naturalHeight);
+
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+        if (flipX) {
+          ctx.translate(cx, 0);
+          ctx.scale(-1, 1);
+          ctx.drawImage(img, -dw / 2, cy - dh, dw, dh);
+        } else {
+          ctx.drawImage(img, cx - dw / 2, cy - dh, dw, dh);
+        }
+        ctx.restore();
+      }
+
+      return { trigger, draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
     //  Canvas setup
     // ══════════════════════════════════════════════════════════════════════════
     const fxCanvas  = document.getElementById('effects');
@@ -934,7 +1041,8 @@
     // ══════════════════════════════════════════════════════════════════════════
     function handleSceneEvent(name) {
       switch (name) {
-        case 'robot_procession': robotProcession.trigger(); break;
+        case 'robot_procession':    robotProcession.trigger();    break;
+        case 'float_robot_descent': floatRobotDescent.trigger();  break;
       }
     }
 
@@ -982,6 +1090,8 @@
       pillar4.drawParticles(fxCtx, dt);
       pillar5.drawParticles(fxCtx, dt);
       pillar6.drawParticles(fxCtx, dt);
+      // float robot — drawn last so it appears in front of everything
+      floatRobotDescent.draw(fxCtx, now);
     }
 
     // ══════════════════════════════════════════════════════════════════════════
