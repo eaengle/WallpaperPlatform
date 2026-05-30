@@ -66,10 +66,142 @@
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    //  ANCHORS — all null; fill in with ?debug as events are built
+    //  ANCHORS — keyed by pillarN prefix; add pillar2…6 as they are built
     // ══════════════════════════════════════════════════════════════════════════
     const ANCHORS = {
+      pillar1TopLeft:  [557, 625],   // leftmost corner of pillar 1 top surface
+      pillar1TopRight: [617, 623],   // rightmost corner of pillar 1 top surface
+      pillar1ImageTop: [592, 512],   // top-center of pillar 1 display area
+      pillar1Lowest:   [607, 626],   // lowest point of pillar 1 top surface (pin 7)
+
+      pillar2TopLeft:  [131, 681],   // pin 1 — leftmost corner of pillar 2 top surface
+      pillar2TopRight: [284, 674],   // pin 3 — rightmost corner of pillar 2 top surface
+      pillar2ImageTop: [225, 414],   // pin 5 — top-center of pillar 2 display area
+      pillar2Lowest:   [223, 684],   // pin 2 — lowest point of pillar 2 top surface
     };
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Image arrays — one per pillar; loaded once at startup
+    // ══════════════════════════════════════════════════════════════════════════
+    function loadImgs(prefix, count) {
+      const imgs = [];
+      for (let i = 1; i <= count; i++) {
+        const img = new Image();
+        img.src = `${prefix}_${String(i).padStart(2, '0')}.png`;
+        imgs.push(img);
+      }
+      return imgs;
+    }
+
+    const SWORD_IMGS_1 = loadImgs('sword_holo', 10);
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Pillar display factory
+    // ══════════════════════════════════════════════════════════════════════════
+    function makeSwordRect(ancTLKey, ancTRKey, ancTCKey, ancLowestKey, imgs, offsetPY, scale) {
+      if (!imgNaturalW) return null;
+      const ancTL = ANCHORS[ancTLKey], ancTR = ANCHORS[ancTRKey], ancTC = ANCHORS[ancTCKey];
+      if (!ancTL || !ancTR || !ancTC) return null;
+      const sTL = paintToCanvas(ancTL[0], ancTL[1]);
+      const sTR = paintToCanvas(ancTR[0], ancTR[1]);
+      const sTC = paintToCanvas(ancTC[0], ancTC[1]);
+      const { s } = coverScale();
+      // bottom anchor: use lowest trapezoid point if provided, else average TL/TR
+      const lowestAnc = ancLowestKey ? ANCHORS[ancLowestKey] : null;
+      const pillarY = lowestAnc
+        ? paintToCanvas(lowestAnc[0], lowestAnc[1]).y
+        : (sTL.y + sTR.y) / 2;
+      const img0 = imgs[0];
+      if (!img0.complete || !img0.naturalWidth) return null;
+      const h = (pillarY - sTC.y) * scale;
+      const w = h * (img0.naturalWidth / img0.naturalHeight);
+      const y = pillarY - h + offsetPY * s;
+      return { x: (sTL.x + sTR.x) / 2 - w / 2, y, w, h };
+    }
+
+    function makePillarDisplay(imgs, ancTLKey, ancTRKey, ancTCKey, ancLowestKey = null, offsetPY = 0, scale = 1.0) {
+      const SWITCH_MS = 10000, FADE_MS = 1000;
+      let curIdx = 0, nextIdx = 1;
+      let switchAt = performance.now() + SWITCH_MS;
+      let fading = false, fadeStart = 0;
+      const MAX_P = 7, parts = [];
+
+      function getRect() { return makeSwordRect(ancTLKey, ancTRKey, ancTCKey, ancLowestKey, imgs, offsetPY, scale); }
+
+      function spawn(r) {
+        parts.push({
+          x: r.x + rnd(0, r.w), y: r.y + rnd(0, r.h),
+          vx: rnd(-0.12, 0.12), vy: rnd(-0.30, -0.06),
+          life: 0, maxLife: rnd(900, 1800), r: rnd(0.7, 1.5),
+        });
+      }
+
+      function drawGlow(ctx, now) {
+        const r = getRect(); if (!r) return;
+        const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+        const pulse = 0.5 + 0.5 * Math.sin(now * 0.0013);
+        const alpha = 0.13 + pulse * 0.07;
+        const halo  = ctx.createRadialGradient(cx, cy, 0, cx, cy, r.w * 0.62);
+        halo.addColorStop(0,   `rgba(120,190,255,${alpha})`);
+        halo.addColorStop(0.5, `rgba(60,130,255,${alpha * 0.5})`);
+        halo.addColorStop(1,   'rgba(0,0,80,0)');
+        ctx.fillStyle = halo;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, r.w * 0.62, r.h * 0.52, 0, 0, TAU);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      function drawParticles(ctx, dt) {
+        const r = getRect(); if (!r) return;
+        if (parts.length < MAX_P && Math.random() < 0.05) spawn(r);
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+        for (let i = parts.length - 1; i >= 0; i--) {
+          const p = parts[i];
+          p.life += dt; p.x += p.vx; p.y += p.vy;
+          if (p.life >= p.maxLife) { parts.splice(i, 1); continue; }
+          const alpha = Math.sin((p.life / p.maxLife) * Math.PI) * 0.55;
+          const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 2.5);
+          g.addColorStop(0,   `rgba(200,230,255,${alpha})`);
+          g.addColorStop(0.5, `rgba(100,180,255,${alpha * 0.4})`);
+          g.addColorStop(1,   'rgba(0,40,180,0)');
+          ctx.fillStyle = g;
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.r * 2.5, 0, TAU); ctx.fill();
+        }
+        ctx.restore();
+      }
+
+      function drawImage(ctx, now) {
+        const r = getRect(); if (!r) return;
+        const img0 = imgs[curIdx];
+        if (!img0.complete || !img0.naturalWidth) return;
+        const { x: dx, y: dy, w: dw, h: dh } = r;
+        if (!fading && now >= switchAt) { fading = true; fadeStart = now; }
+        if (!fading) {
+          ctx.drawImage(img0, dx, dy, dw, dh);
+        } else {
+          const p = Math.min(1, (now - fadeStart) / FADE_MS);
+          ctx.save(); ctx.globalAlpha = 1 - p; ctx.drawImage(img0, dx, dy, dw, dh); ctx.restore();
+          const img1 = imgs[nextIdx];
+          if (img1.complete && img1.naturalWidth) {
+            ctx.save(); ctx.globalAlpha = p; ctx.drawImage(img1, dx, dy, dw, dh); ctx.restore();
+          }
+          if (p >= 1) {
+            curIdx = nextIdx; nextIdx = (nextIdx + 1) % imgs.length;
+            fading = false; switchAt = now + SWITCH_MS;
+          }
+        }
+      }
+
+      return { drawGlow, drawImage, drawParticles };
+    }
+
+    // ── Pillar instances ────────────────────────────────────────────────────
+    const pillar1 = makePillarDisplay(SWORD_IMGS_1, 'pillar1TopLeft', 'pillar1TopRight', 'pillar1ImageTop', 'pillar1Lowest', 0, 1.0);
+    const pillar2 = makePillarDisplay(SWORD_IMGS_1, 'pillar2TopLeft', 'pillar2TopRight', 'pillar2ImageTop', 'pillar2Lowest', 0, 1.25);
 
     // ══════════════════════════════════════════════════════════════════════════
     //  Canvas setup
@@ -115,7 +247,15 @@
     // ══════════════════════════════════════════════════════════════════════════
     function drawEffects(dt, t, now) {
       fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
-      // effects added here as they are built
+      // glow passes (behind images)
+      pillar1.drawGlow(fxCtx, now);
+      pillar2.drawGlow(fxCtx, now);
+      // image passes
+      pillar1.drawImage(fxCtx, now);
+      pillar2.drawImage(fxCtx, now);
+      // particle passes (in front)
+      pillar1.drawParticles(fxCtx, dt);
+      pillar2.drawParticles(fxCtx, dt);
     }
 
     // ══════════════════════════════════════════════════════════════════════════
