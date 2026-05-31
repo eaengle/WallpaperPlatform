@@ -1197,6 +1197,59 @@
     })();
 
     // ══════════════════════════════════════════════════════════════════════════
+    //  God rays — cosmic light shafts descending through the cathedral nave
+    // ══════════════════════════════════════════════════════════════════════════
+    const godRays = (() => {
+      // Spotlight beams: apex at plasmaCenter, base at each pillar's top surface.
+      // Triangles radiate from the central throne energy source to illuminate each hologram.
+      const beams = [
+        { tlKey: 'pillar1TopLeft', trKey: 'pillar1TopRight', phase: 0.0  },
+        { tlKey: 'pillar2TopLeft', trKey: 'pillar2TopRight', phase: 1.6  },
+        { tlKey: 'pillar3TopLeft', trKey: 'pillar3TopRight', phase: 3.1  },
+        { tlKey: 'pillar4TopLeft', trKey: 'pillar4TopRight', phase: 4.8  },
+        { tlKey: 'pillar5TopLeft', trKey: 'pillar5TopRight', phase: 2.25 },
+        { tlKey: 'pillar6TopLeft', trKey: 'pillar6TopRight', phase: 0.9  },
+      ];
+
+      function draw(ctx, t) {
+        if (!imgNaturalW || !ANCHORS.plasmaCenter) return;
+        const src = paintToCanvas(...ANCHORS.plasmaCenter);
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+
+        for (const bm of beams) {
+          const tl = ANCHORS[bm.tlKey], tr = ANCHORS[bm.trKey];
+          if (!tl || !tr) continue;
+          const stl = paintToCanvas(...tl);
+          const str = paintToCanvas(...tr);
+          const pcx = (stl.x + str.x) / 2;
+          const pcy = (stl.y + str.y) / 2;
+
+          const pulse = 0.56 + 0.26 * Math.sin(t * 0.00025 + bm.phase)
+                             + 0.12 * Math.sin(t * 0.00082 + bm.phase * 1.7)
+                             + 0.06 * Math.sin(t * 0.00200 + bm.phase * 2.3);
+
+          const grad = ctx.createLinearGradient(src.x, src.y, pcx, pcy);
+          const a0 = 0.20 * pulse;
+          const a1 = 0.40 * pulse;
+          grad.addColorStop(0,   `rgba(200,180,255,${a0.toFixed(3)})`);
+          grad.addColorStop(0.7, `rgba(180,140,255,${a1.toFixed(3)})`);
+          grad.addColorStop(1,   `rgba(210,190,255,${(a1 * 0.5).toFixed(3)})`);
+          ctx.fillStyle = grad;
+
+          ctx.beginPath();
+          ctx.moveTo(src.x, src.y);
+          ctx.lineTo(str.x, str.y);
+          ctx.lineTo(stl.x, stl.y);
+          ctx.closePath();
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+      return { draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
     //  Ground fog — dense billowing mist pooling on the cathedral floor
     // ══════════════════════════════════════════════════════════════════════════
     const groundFog = (() => {
@@ -1701,6 +1754,8 @@
       fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
       // back window stars — drawn first, appear inside the cosmic arch behind the structure
       backWindowStars.draw(fxCtx, t);
+      // god rays — cosmic light shafts descending through the nave, drawn over stars
+      godRays.draw(fxCtx, t);
       // plasma ball — around the central throne, in front of the window
       plasmaBall.draw(fxCtx, t);
       // plasma eruption — extended tendrils event, layered on top of base plasma
