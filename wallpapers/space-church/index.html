@@ -298,6 +298,59 @@
     })();
 
     // ══════════════════════════════════════════════════════════════════════════
+    //  Floor convergence event — all 6 channels accelerate and their pulse
+    //  heads converge on the altar simultaneously, like the throne charging up.
+    // ══════════════════════════════════════════════════════════════════════════
+    const floorConvergence = (() => {
+      const PEAK_MS  = 3000;   // ms from trigger → altar arrival
+      const RAMP_MS  = 2000;   // ramp-up to full speed
+      const HOLD_MS  = 2000;   // hold — rapid pulses cycling at altar
+      const DECAY_MS = 3000;   // ramp back to normal
+      const TOTAL_MS = RAMP_MS + HOLD_MS + DECAY_MS;
+      const MAX_MUL  = 5.0;    // peak speed multiplier
+
+      let _active = false, _startT = -1, _env = 0;
+      let _phaseAdjs = [];
+      let _mul = 1.0, _adjs = null;
+
+      function _ease(p) { return p * p * (3 - 2 * p); }
+
+      function tick(t) {
+        if (!_active) { _mul = 1.0; _adjs = null; _env = 0; return; }
+        if (_startT < 0) _startT = t;
+        const e = t - _startT;
+        if (e >= TOTAL_MS) { _active = false; _mul = 1.0; _adjs = null; _env = 0; return; }
+        if (e < RAMP_MS)                _env = _ease(e / RAMP_MS);
+        else if (e < RAMP_MS + HOLD_MS) _env = 1.0;
+        else                            _env = 1 - _ease((e - RAMP_MS - HOLD_MS) / DECAY_MS);
+        _mul  = 1 + _env * (MAX_MUL - 1);
+        _adjs = _phaseAdjs.map(adj => adj * _env);
+      }
+
+      // At trigger time, compute a per-line phase adjustment so that the k=0
+      // pulse on each line arrives at frac=0 (altar end) at exactly t_now + PEAK_MS,
+      // assuming full MAX_MUL speed is in effect.  During the ramp-in the
+      // adjustment is lerped from 0 → target alongside the speed ramp, so the
+      // pulses visually slide toward convergence rather than popping.
+      function trigger(t_now, defs) {
+        if (_active) return;
+        _active = true; _startT = -1;
+        const t_peak = t_now + PEAK_MS;
+        _phaseAdjs = (defs || []).map(def => {
+          if (!def) return 0;
+          const raw = -((t_peak * def.speed * MAX_MUL) + def.phase);
+          return ((raw % 1.0) + 1.0) % 1.0;
+        });
+      }
+
+      function getMul()         { return _mul; }
+      function getAdj(i)        { return _adjs ? (_adjs[i] || 0) : 0; }
+      function getBrightBoost() { return 1 + _env * 1.2; }
+
+      return { tick, trigger, getMul, getAdj, getBrightBoost };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
     //  Floor energy pulse lines
     // ══════════════════════════════════════════════════════════════════════════
     const floorLines = (() => {
@@ -329,13 +382,13 @@
       const R = 190, G = 100, B = 255; // electric purple
 
       function draw(ctx, t) {
-        for (const def of DEFS) {
-          if (!def) continue;
-          _drawLine(ctx, def, t);
+        for (let i = 0; i < DEFS.length; i++) {
+          if (!DEFS[i]) continue;
+          _drawLine(ctx, DEFS[i], t, i);
         }
       }
 
-      function _drawLine(ctx, def, t) {
+      function _drawLine(ctx, def, t, lineIdx) {
         const { points, segs, speed, phase } = def;
         const pts = points.map(([px, py]) => paintToCanvas(px, py));
 
@@ -348,7 +401,10 @@
         const total = dists[dists.length - 1];
         if (total < 1) return;
 
-        const bb = cathedralDimming.getBrightBoost();
+        const bb = cathedralDimming.getBrightBoost() * floorConvergence.getBrightBoost();
+        const cMul = floorConvergence.getMul();
+        const cAdj = floorConvergence.getAdj(lineIdx);
+
         ctx.save();
         ctx.globalCompositeOperation = 'screen';
 
@@ -370,7 +426,7 @@
         const PR     = Math.max(3, Math.min(6, total * 0.022));
         const CAP_HL = PR * 1.2; // half-length of the capsule body
         for (let k = 0; k < 2; k++) {
-          const frac = (t * speed + phase + k * 0.5) % 1.0;
+          const frac = (t * speed * cMul + phase + cAdj + k * 0.5) % 1.0;
           const dist = frac * total;
 
           // Find which segment the pulse currently occupies
@@ -422,7 +478,7 @@
         ctx.restore();
       }
 
-      return { draw };
+      return { draw, getDefs: () => DEFS };
     })();
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -1461,8 +1517,9 @@
         case 'arch_arc':            archArc.trigger();            break;
         case 'portal_surge':        portalSurge.trigger();        break;
         case 'plasma_eruption':     plasmaEruption.trigger();     break;
-        case 'cathedral_dimming':   cathedralDimming.trigger();   break;
-        case 'hologram_glitch':     hologramGlitch.trigger();     break;
+        case 'cathedral_dimming':   cathedralDimming.trigger();                         break;
+        case 'hologram_glitch':     hologramGlitch.trigger();                            break;
+        case 'floor_convergence':   floorConvergence.trigger(t, floorLines.getDefs());  break;
       }
     }
 
@@ -1504,6 +1561,8 @@
       pillar4.drawImage(fxCtx, now);
       pillar5.drawImage(fxCtx, now);
       pillar6.drawImage(fxCtx, now);
+      // floor convergence — tick before drawing so per-line mul/adj are current
+      floorConvergence.tick(t);
       // floor energy lines — occlusion handled per-segment inside the IIFE
       floorLines.draw(fxCtx, t);
       // ground fog — mist pooling on the floor; drawn after lines so energy channels glow through it
