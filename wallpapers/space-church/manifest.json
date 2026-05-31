@@ -11,6 +11,7 @@
     { "name": "plasma_eruption",     "minSeconds": 45,  "maxSeconds": 85,  "label": "Plasma Eruption" },
     { "name": "cathedral_dimming",   "minSeconds": 60,  "maxSeconds": 120, "label": "Cathedral Dimming" },
     { "name": "hologram_glitch",     "minSeconds": 30,  "maxSeconds": 70,  "label": "Hologram Glitch" },
-    { "name": "floor_convergence",   "minSeconds": 40,  "maxSeconds": 90,  "label": "Floor Convergence" }
+    { "name": "floor_convergence",   "minSeconds": 40,  "maxSeconds": 90,  "label": "Floor Convergence" },
+    { "name": "rune_flash",          "minSeconds": 30,  "maxSeconds": 70,  "label": "Rune Flash" }
   ]
 }

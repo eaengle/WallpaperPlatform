@@ -298,6 +298,167 @@
     })();
 
     // ══════════════════════════════════════════════════════════════════════════
+    //  Rune flash event — geometric angular runes ignite on 1–2 pillar faces;
+    //  glowing segments extend outward from rune center, pulse, then fade.
+    // ══════════════════════════════════════════════════════════════════════════
+    const runeFlash = (() => {
+      const IGNITE_MS = 500;
+      const HOLD_MS   = 1800;
+      const FADE_MS   = 900;
+      const TOTAL_MS  = IGNITE_MS + HOLD_MS + FADE_MS;
+
+      // Each template: array of strokes, each stroke [[nx,ny],...] in [-1,1] space.
+      // Strokes start near center so they draw outward during ignite.
+      const TEMPLATES = [
+        // Rune A: vertical spine + 2 angled arms + crossbar
+        [ [[0,0],[0,-1.0]], [[0,0],[0,0.65]], [[0,-0.25],[-0.70,0.40]], [[0,-0.25],[0.70,0.40]],
+          [[0,-0.10],[-0.45,-0.10]], [[0,-0.10],[0.45,-0.10]] ],
+        // Rune B: Y-shape
+        [ [[0,0.20],[0,1.0]], [[0,0.20],[-0.70,-0.90]], [[0,0.20],[0.70,-0.90]],
+          [[0,-0.10],[-0.45,-0.10]], [[0,-0.10],[0.45,-0.10]] ],
+        // Rune C: diamond + cross spines
+        [ [[0,0],[0,-1.0]], [[0,0],[0,1.0]], [[0,0],[-0.65,0]], [[0,0],[0.65,0]],
+          [[0,-0.50],[0.45,-0.20]], [[0,-0.50],[-0.45,-0.20]] ],
+        // Rune D: trident / spear
+        [ [[0,0],[0,-1.0]], [[0,-0.75],[-0.50,-0.30]], [[0,-0.75],[0.50,-0.30]],
+          [[0,0],[-0.50,0.75]], [[0,0],[0.50,0.75]],
+          [[0,0.40],[-0.40,0.40]], [[0,0.40],[0.40,0.40]] ],
+        // Rune E: angular sigil
+        [ [[0,0],[-0.80,-0.85]], [[0,0],[0.80,-0.85]], [[0,0],[0.65,0.90]], [[0,0],[-0.65,0.90]],
+          [[0,-0.40],[-0.45,-0.40]], [[0,-0.40],[0.45,-0.40]], [[0,0.30],[0.40,0.30]] ],
+      ];
+
+      const PILLAR_KEYS = [
+        ['pillar1TopLeft','pillar1TopRight','pillar1ImageTop','pillar1Lowest'],
+        ['pillar2TopLeft','pillar2TopRight','pillar2ImageTop','pillar2Lowest'],
+        ['pillar3TopLeft','pillar3TopRight','pillar3ImageTop','pillar3Lowest'],
+        ['pillar4TopLeft','pillar4TopRight','pillar4ImageTop','pillar4Lowest'],
+        ['pillar5TopLeft','pillar5TopRight','pillar5ImageTop','pillar5Lowest'],
+        ['pillar6TopLeft','pillar6TopRight','pillar6ImageTop','pillar6Lowest'],
+      ];
+
+      let _active = false, _startAt = -1, _targets = [];
+
+      function trigger() {
+        if (_active) return;
+        _active = true; _startAt = -1;
+        const count = Math.random() < 0.35 ? 2 : 1;
+        const shuffled = [...PILLAR_KEYS].sort(() => Math.random() - 0.5);
+        _targets = shuffled.slice(0, count).map(([tl, tr, it, lo]) => ({
+          tl, tr, it, lo,
+          tmpl: Math.floor(Math.random() * TEMPLATES.length),
+        }));
+      }
+
+      function _ease(p) { return p * p * (3 - 2 * p); }
+
+      // Draw stroke path up to `frac` of its total length
+      function _strokePart(ctx, pts, frac) {
+        if (frac <= 0 || pts.length < 2) return;
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        if (frac >= 1) {
+          for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+        } else {
+          const lens = [0];
+          for (let i = 0; i < pts.length - 1; i++) {
+            const dx = pts[i+1].x - pts[i].x, dy = pts[i+1].y - pts[i].y;
+            lens.push(lens[i] + Math.sqrt(dx*dx + dy*dy));
+          }
+          const target = lens[lens.length-1] * frac;
+          for (let i = 0; i < pts.length - 1; i++) {
+            if (lens[i+1] <= target) {
+              ctx.lineTo(pts[i+1].x, pts[i+1].y);
+            } else {
+              const sf = lens[i+1] > lens[i] ? (target - lens[i]) / (lens[i+1] - lens[i]) : 0;
+              ctx.lineTo(pts[i].x + (pts[i+1].x - pts[i].x) * sf,
+                         pts[i].y + (pts[i+1].y - pts[i].y) * sf);
+              break;
+            }
+          }
+        }
+        ctx.stroke();
+      }
+
+      function draw(ctx, now) {
+        if (!_active || !imgNaturalW) return;
+        if (_startAt < 0) _startAt = now;
+        const elapsed = now - _startAt;
+        if (elapsed >= TOTAL_MS) { _active = false; return; }
+
+        let env;
+        if (elapsed < IGNITE_MS)                env = _ease(elapsed / IGNITE_MS);
+        else if (elapsed < IGNITE_MS + HOLD_MS) env = 1.0;
+        else                                     env = 1 - _ease((elapsed - IGNITE_MS - HOLD_MS) / FADE_MS);
+        if (env < 0.01) return;
+
+        const drawFrac = elapsed < IGNITE_MS ? _ease(elapsed / IGNITE_MS) : 1.0;
+        const flicker  = (elapsed > IGNITE_MS && elapsed < IGNITE_MS + HOLD_MS)
+          ? 0.82 + 0.18 * Math.sin(now * 0.021)
+          : 1.0;
+        const alpha = env * flicker;
+        if (alpha < 0.01) return;
+
+        // Color: white-hot ignite flash (first 200ms) → amber-gold
+        const flashT = Math.max(0, 1 - elapsed / 200);
+        const gR = Math.round(205 + flashT * 50);
+        const gG = Math.round(150 + flashT * 105);
+        const gB = Math.round(  0 + flashT * 255);
+
+        const { s } = coverScale();
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+        ctx.lineCap  = 'round';
+        ctx.lineJoin = 'round';
+
+        for (const { tl, tr, it, lo, tmpl } of _targets) {
+          const ancTL = ANCHORS[tl], ancTR = ANCHORS[tr];
+          const ancIT = ANCHORS[it], ancLO = ANCHORS[lo];
+          if (!ancTL || !ancTR || !ancIT || !ancLO) continue;
+
+          const sTL = paintToCanvas(ancTL[0], ancTL[1]);
+          const sTR = paintToCanvas(ancTR[0], ancTR[1]);
+          const sIT = paintToCanvas(ancIT[0], ancIT[1]);
+          const sLO = paintToCanvas(ancLO[0], ancLO[1]);
+
+          const cx    = (sTL.x + sTR.x) / 2;
+          const cy    = (sIT.y + sLO.y) / 2;
+          const runeW = (sTR.x - sTL.x) * 0.72;
+          const runeH = (sLO.y - sIT.y) * 0.58;
+          const toPt  = (nx, ny) => ({ x: cx + nx * runeW / 2, y: cy + ny * runeH / 2 });
+
+          for (const rawPts of TEMPLATES[tmpl]) {
+            const pts = rawPts.map(([nx, ny]) => toPt(nx, ny));
+            ctx.strokeStyle = `rgba(${gR},${gG},${gB},${alpha * 0.22})`;
+            ctx.lineWidth   = s * 7;
+            _strokePart(ctx, pts, drawFrac);
+            ctx.strokeStyle = `rgba(${gR},${gG},${gB},${alpha * 0.60})`;
+            ctx.lineWidth   = s * 2.2;
+            _strokePart(ctx, pts, drawFrac);
+            ctx.strokeStyle = `rgba(255,${Math.round(240 + flashT * 15)},${Math.round(180 + flashT * 75)},${alpha * 0.95})`;
+            ctx.lineWidth   = Math.max(0.8, s * 0.55);
+            _strokePart(ctx, pts, drawFrac);
+          }
+
+          // Ignite burst at rune center
+          if (flashT > 0.01) {
+            const br  = s * (3 + flashT * 14);
+            const bst = ctx.createRadialGradient(cx, cy, 0, cx, cy, br);
+            bst.addColorStop(0,   `rgba(255,255,255,${flashT * alpha})`);
+            bst.addColorStop(0.5, `rgba(255,210,80,${flashT * alpha * 0.55})`);
+            bst.addColorStop(1,   'rgba(255,160,0,0)');
+            ctx.fillStyle = bst;
+            ctx.beginPath(); ctx.arc(cx, cy, br, 0, TAU); ctx.fill();
+          }
+        }
+
+        ctx.restore();
+      }
+
+      return { trigger, draw };
+    })();
+
+    // ══════════════════════════════════════════════════════════════════════════
     //  Floor convergence event — all 6 channels accelerate and their pulse
     //  heads converge on the altar simultaneously, like the throne charging up.
     // ══════════════════════════════════════════════════════════════════════════
@@ -1520,6 +1681,7 @@
         case 'cathedral_dimming':   cathedralDimming.trigger();                         break;
         case 'hologram_glitch':     hologramGlitch.trigger();                            break;
         case 'floor_convergence':   floorConvergence.trigger(t, floorLines.getDefs());  break;
+        case 'rune_flash':          runeFlash.trigger();                                 break;
       }
     }
 
@@ -1561,6 +1723,8 @@
       pillar4.drawImage(fxCtx, now);
       pillar5.drawImage(fxCtx, now);
       pillar6.drawImage(fxCtx, now);
+      // rune flash — on pillar faces, in front of holograms, behind particles
+      runeFlash.draw(fxCtx, now);
       // floor convergence — tick before drawing so per-line mul/adj are current
       floorConvergence.tick(t);
       // floor energy lines — occlusion handled per-segment inside the IIFE
