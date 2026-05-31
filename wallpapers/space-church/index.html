@@ -924,13 +924,14 @@
           flipX = false; alpha = 1.0;
 
         } else {
-          // Robot walks toward camera — grows from H_FAR to H_NEAR, fades at very end
+          // Robot walks toward camera — grows from H_FAR to H_NEAR, rolls off screen at end
           const p = _eio((elapsed - EMERGE_DUR - WALK_DUR - TURN_DUR) / FORWARD_DUR);
-          cx = center.x + (exit.x - center.x) * p;
-          cy = center.y + (exit.y - center.y) * p;
-          img = ROBOT_FRONT_IMG; flipX = false;
           paintH = H_FAR + (H_NEAR - H_FAR) * p;
-          alpha  = p > 0.88 ? Math.max(0, 1 - (p - 0.88) / 0.12) : 1.0;
+          const rollOffY = exit.y + (H_NEAR + 20) * s;  // fully below screen bottom
+          cx = center.x + (exit.x - center.x) * p;
+          cy = center.y + (rollOffY - center.y) * p;
+          img = ROBOT_FRONT_IMG; flipX = false;
+          alpha = 1.0;
         }
 
         if (!img || !img.complete || !img.naturalWidth) return;
