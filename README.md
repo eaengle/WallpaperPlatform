@@ -212,7 +212,7 @@ Posted by `WallpaperEventBridge` on randomised C# timers, or immediately when tr
 
 The `data` field is optional and event-specific. Built-in events per scene:
 
-**cabin-snow** (`wallpapers/cabin-snow/manifest.json`):
+**cabin-snow** — see `wallpapers/cabin-snow/manifest.json` for intervals:
 
 | Event | Effect |
 |---|---|
@@ -224,7 +224,7 @@ The `data` field is optional and event-specific. Built-in events per scene:
 | `rabbit_hop` | A rabbit hops in from one side, pauses, then hops out the other side past the boulder |
 | `deer_walk` | A deer walks through the snowy scene |
 
-**tech-ruin** (`wallpapers/tech-ruin/manifest.json`):
+**tech-ruin** — see `wallpapers/tech-ruin/manifest.json` for intervals:
 
 | Event | Effect |
 |---|---|
@@ -247,12 +247,19 @@ The `data` field is optional and event-specific. Built-in events per scene:
 | `night_shift` | The scene darkens as if a cloud passes over the canopy (32 s) |
 | `power_arc` | A lightning bolt arcs between server modules in three flashes |
 
-**space-church** (`wallpapers/space-church/manifest.json`) — premium:
+**space-church** — premium; see `wallpapers/space-church/manifest.json` for intervals:
 
 | Event | Effect |
 |---|---|
 | `robot_procession` | A track robot enters from an aisle, walks to center, turns to face the camera, then advances forward |
 | `float_robot_descent` | An orb drone descends from above, floats to center, faces the camera, then exits |
+| `arch_arc` | Electricity bolts across the upper nave vault ceiling in three flashes |
+| `portal_surge` | The cosmic arch floods with bright energy in a surge of light |
+| `plasma_eruption` | Plasma tendrils erupt outward from the central throne in extended arcs |
+| `cathedral_dimming` | The cathedral darkens to a midnight-ceremony atmosphere while glows compensate |
+| `hologram_glitch` | A random pillar hologram rapid-cycles through all its images |
+| `floor_convergence` | All six floor channels accelerate and converge simultaneously on the altar |
+| `rune_flash` | Alien-gothic rune symbols ignite on random pillar faces |
 
 ### Listening in your wallpaper
 
